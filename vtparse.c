@@ -59,6 +59,11 @@ static void do_action(vtparse_t *parser, vtparse_action_t action, unsigned int c
             if(ch == ';')
             {
                 parser->num_params += 1;
+                if (parser->num_params > sizeof(parser->params)/sizeof(int))
+                {
+                     parser->cb(parser, VTPARSE_ACTION_ERROR, 0);
+                     break;
+                }
                 parser->params[parser->num_params-1] = 0;
             }
             else
