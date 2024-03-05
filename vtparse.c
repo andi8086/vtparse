@@ -15,8 +15,8 @@ void vtparse_init(vtparse_t *parser, vtparse_callback_t cb)
     parser->num_params             = 0;
     parser->ignore_flagged         = 0;
     parser->cb                     = cb;
-    parser->characterBytes         = 1;
-    parser->utf8Character          = 0;
+    parser->character_bytes        = 1;
+    parser->utf8_char              = 0;
 }
 
 static void do_action(vtparse_t *parser, vtparse_action_t action, unsigned int ch)
@@ -138,15 +138,15 @@ void vtparse(vtparse_t *parser, unsigned char *data, unsigned int len)
     for(i = 0; i < len; i++)
     {
         unsigned char ch = data[i];
-        if(parser->characterBytes != 1)
+        if(parser->character_bytes != 1)
         {
-            parser->utf8Character = (parser->utf8Character << 6) | (ch & 0x3F);
-            parser->characterBytes--;
+            parser->utf8_char = (parser->utf8_char << 6) | (ch & 0x3F);
+            parser->character_bytes--;
 
-            if(parser->characterBytes == 1)
+            if(parser->character_bytes == 1)
             {
                 state_change_t change = VTPARSE_ACTION_PRINT;
-                do_state_change(parser, change, parser->utf8Character);
+                do_state_change(parser, change, parser->utf8_char);
             }
         }
         else if((ch&(1<<7)) != 0)
@@ -161,24 +161,24 @@ void vtparse(vtparse_t *parser, unsigned char *data, unsigned int len)
                 bit--;
             }while(bit > 1);
 
-            parser->utf8Character = 0;
-            parser->characterBytes = 7-bit;
-            switch(parser->characterBytes)
+            parser->utf8_char = 0;
+            parser->character_bytes = 7-bit;
+            switch(parser->character_bytes)
             {
                 case 2:
-                    parser->utf8Character = ch & (1 | (1<<1) | (1<<2) | (1<<3) | (1<<4));
+                    parser->utf8_char = ch & (1 | (1<<1) | (1<<2) | (1<<3) | (1<<4));
                     break;
                 case 3:
-                    parser->utf8Character = ch & (1 | (1<<1) | (1<<2) | (1<<3));
+                    parser->utf8_char = ch & (1 | (1<<1) | (1<<2) | (1<<3));
                     break;
                 case 4:
-                    parser->utf8Character = ch & (1 | (1<<1) | (1<<2));
+                    parser->utf8_char = ch & (1 | (1<<1) | (1<<2));
                     break;
                 case 5:
-                    parser->utf8Character = ch & (1 | (1<<1));
+                    parser->utf8_char = ch & (1 | (1<<1));
                     break;
                 case 6:
-                    parser->utf8Character = ch & 1;
+                    parser->utf8_char = ch & 1;
                     break;
             }
         }

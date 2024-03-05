@@ -32,8 +32,8 @@ typedef struct vtparse {
     int                params[16];
     int                num_params;
     void*              user_data;
-    int                characterBytes;
-    unsigned int       utf8Character;
+    int                character_bytes;
+    unsigned int       utf8_char;
 } vtparse_t;
 
 void vtparse_init(vtparse_t *parser, vtparse_callback_t cb);
