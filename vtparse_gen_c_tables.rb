@@ -1,5 +1,5 @@
 
-require 'vtparse_tables'
+require './vtparse_tables.rb'
 
 class String
     def pad(len)
