@@ -461,6 +461,11 @@ int main(int argc, char *argv[])
                                         write(master, keybuff, 3);
                                         continue;
                                 }
+                                if (in == KEY_BACKSPACE) {
+                                        sprintf(keybuff, "\x7F");
+                                        write(master, keybuff, 1);
+                                        continue;
+                                }
                                 if (in >= 1 && in < 256) {
                                         write(master, &in, 1);
                                         continue;
