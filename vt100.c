@@ -7,6 +7,7 @@
 #include <error.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <pty.h>
 
 #include <ncurses.h>
 #include "vtparse.h"
@@ -51,6 +52,7 @@ void term_config(void)
         }
 */
         initscr();
+        //newterm();
         atexit(term_restore);
         raw();
         noecho();
@@ -81,6 +83,38 @@ typedef struct {
 
 
 /* here we use ansi escape sequences to move the cursor LOL (quick test) */
+void cur_attr(term_ctx_t *ctx, vtparse_t *parser)
+{
+        if (parser->num_params == 0) {
+                attrset(WA_NORMAL);
+                return;
+        }
+        if (parser->num_params == 1) {
+                switch(parser->params[0]) {
+                case 0:
+                        attrset(WA_NORMAL);
+                        return;
+                case 1:
+                        attrset(WA_BOLD);
+                        return;
+                case 2:
+                        attrset(WA_DIM);
+                        return;
+                case 4:
+                        attrset(WA_UNDERLINE);
+                        return;
+                case 5:
+                        attrset(WA_BLINK);
+                        return;
+                case 7:
+                        attrset(WA_REVERSE);
+                        return;
+                default:
+                        return;
+                }
+        }
+}
+
 
 void cur_up(term_ctx_t *ctx, vtparse_t *parser)
 {
@@ -219,6 +253,7 @@ void cur_newline()
         refresh();
 }
 
+
 void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch)
 {
         /* VT100 passive display support */
@@ -266,6 +301,9 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
                 case 'H':
                         cur_home(parser->user_data, parser);
                         break;
+                case 'm':
+                        cur_attr(parser->user_data, parser);
+                        break;
                 default:
                         break;
                 }
@@ -286,8 +324,6 @@ int main(int argc, char *argv[])
         int fd2[2];
         pid_t pid;
         char line[MAXLINE];
-        const char *PROGRAM_B_INPUT = "fake input\n";
-        char *PROGRAM_B = argv[1];
 
         vtparse_t parser;
 
@@ -296,63 +332,78 @@ int main(int argc, char *argv[])
         term_config();
 
         vtparse_init(&parser, parser_callback);
+        int master;
+        pid = forkpty(&master, NULL, NULL, NULL);
 
-        error(0,0,"Starting [%s]...", PROGRAM_B);
-        //if ((pipe(fd1) < 0) || (pipe(fd2) < 0)) {
-        if (pipe(fd2) < 0) {
-                error(0, 0, "PIPE ERROR");
-                return -2;
+        if (pid == -1) {
+                printf("Error with forkpty");
+                return -1;
         }
 
-        if ((pid = fork()) < 0) {
-                error(0,0,"FORK ERROR");
-                return -3;
-        } else if (pid == 0) {     // CHILD PROCESS
-                // close(fd1[1]);
-                close(fd2[0]);
+        if (!pid) {
+                char* exec_argv[] = {"/usr/bin/mc", NULL};
+                char *env[] = {
+                        "PATH=/usr/bin:/bin",
+                        "HOME=/home/andreas",
+                        "TERM=vt102",
+                        "LC_ALL=C",
+                        "USER=andreas",
+                        0
+                };
+                execve(exec_argv[0], exec_argv, env);
+                perror("CHILD: execvp");
+                return EXIT_FAILURE;
+        } else {
 
-                /* if (dup2(fd1[0], STDIN_FILENO) != STDIN_FILENO) {
-                        error(0,0,"-- CHILD --    dup2 error to stdin");
+                /* main pid */
+
+                nodelay(stdscr, true);
+                while (1) {
+                        int rcv;
+
+                        char buffer[128];
+                        refresh();
+                        doupdate();
+
+                        /* look if something is there on child's stdout */
+                        struct timeval timeout;
+                        timeout.tv_sec = 0;
+                        timeout.tv_usec = 100;
+                        fd_set fds;
+                        FD_ZERO(&fds);
+                        FD_SET(master, &fds);
+
+                        int rc = select(master + 1, &fds, NULL, NULL, &timeout);
+                        if (rc > 0) {
+                                rcv = read(master, buffer, sizeof(buffer));
+                                if (rcv > 0) {
+                                        vtparse(&parser, (unsigned char *)buffer, rcv);
+                                }
+                                refresh();
+                                doupdate();
+                        } else if (rc == -1) {
+                                kill(getpid(), SIGTERM);
+                        }
+                        int in = getch();
+                        if (in != ERR) {
+                                if (in >= 1 && in <= 127) {
+                                        write(master, &in, 1);
+                                        continue;
+                                }
+                                if (in >= 256 && in < 256*256 - 1) {
+                                        write(master, &in, 2);
+                                        continue;
+                                }
+                                if (in > 256*256 && in < 256*256*256 - 1) {
+                                        write(master, &in, 3);
+                                        continue;
+                                }
+                        }
                 }
-                close(fd1[0]); */
-
-                if (dup2(fd2[1], STDOUT_FILENO) != STDOUT_FILENO) {
-                        error(0,0,"-- CHILD --    dup2 error to stdout");
-                }
-                close(fd2[1]);
-
-                if (execvp(argv[1], argv + 1) < 0) {
-                        error(0,0,"-- CHILD --    system error");
-                        perror("ERROR DEFN : ");
-                        return -4;
-                }
-
-                return 0;
-        } else {        // PARENT PROCESS
-                int rv;
-                // close(fd1[0]);
-                close(fd2[1]);
-
-                /* if (write(fd1[1], PROGRAM_B_INPUT, strlen(PROGRAM_B_INPUT)) != strlen(PROGRAM_B_INPUT)) {
-                        error(0,0,"READ ERROR FROM PIPE");
-                } */
-
-next_data:
-                if ((rv = read(fd2[0], line, MAXLINE)) < 0) {
-                        error(0,0,"READ ERROR FROM PIPE");
-                } else if (rv == 0) {
-                        error(0,0,"Child Closed Pipe");
-                        /* FIXME: waitpid */
-
-                        sleep(3);
-                        return 0;
-                }
-
-                vtparse(&parser, (unsigned char *)line, rv);
-
-                goto next_data;
-
         }
-
-        return 0;
+        if (waitpid(pid, NULL, 0) == -1) {
+                perror("PARENT: waitpid");
+                return EXIT_FAILURE;
+        }
+        return EXIT_SUCCESS;
 }
