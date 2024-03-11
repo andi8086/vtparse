@@ -87,7 +87,6 @@ void term_config(void)
 }
 
 
-
 typedef struct {
         int dummy;
 } term_ctx_t;
@@ -251,17 +250,17 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
         getyx(stdscr, y, x);
         getmaxyx(stdscr, maxy, maxx);
         if (parser->num_params == 1) {
-                if (parser->params[0] <= maxy) {
-                        move(parser->params[0] + 1, x);
+                if (parser->params[0] <= maxy + 1) {
+                        move(parser->params[0] - 1, x);
                         refresh();
                 }
                 return;
         }
 
         if (parser->num_params == 2) {
-                if (parser->params[0] <= maxy &&
-                    parser->params[1] <= maxx) {
-                        move(parser->params[0] + 1, parser->params[1] + 1);
+                if (parser->params[0] <= maxy + 1 &&
+                    parser->params[1] <= maxx + 1) {
+                        move(parser->params[0] - 1, parser->params[1] - 1);
                         refresh();
                 }
                 return;
@@ -427,6 +426,19 @@ int main(int argc, char *argv[])
                                 char keybuff[4];
                                 if (in == KEY_RESIZE) {
                                         handle_resizing();
+                                        struct winsize {
+                                                unsigned short ws_row;
+                                                unsigned short ws_col;
+                                                unsigned short ws_xpixel;
+                                                unsigned short ws_ypixel;
+                                        };
+
+                                        struct winsize w;
+                                        int maxx, maxy;
+                                        getmaxyx(stdscr, maxy, maxx);
+                                        w.ws_row = maxy;
+                                        w.ws_col = maxx;
+                                        ioctl(master, TIOCSWINSZ, &w);
                                         continue;
                                 }
                                 if (in == KEY_UP) {
