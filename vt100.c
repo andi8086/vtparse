@@ -378,15 +378,13 @@ int main(int argc, char *argv[])
         }
 
         if (!pid) {
-                char* exec_argv[] = {"/usr/bin/mc", NULL};
+                char* exec_argv[] = {"/bin/bash", NULL};
                 char *env[] = {
                         "PATH=/usr/bin:/bin",
                         "HOME=/home/andreas",
                         "TERM=vt100",
                         "LC_ALL=C",
                         "USER=andreas",
-                        "COLUMNS=100",
-                        "ROWS=25",
                         0
                 };
                 execve(exec_argv[0], exec_argv, env);
