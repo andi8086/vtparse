@@ -24,6 +24,16 @@ void term_restore(void)
 }
 
 
+static void handle_resizing(void)
+{
+        endwin();
+        initscr();
+        keypad(stdscr, true);
+        cbreak();
+        noecho();
+}
+
+
 void term_config(void)
 {
         if (!isatty(STDIN_FILENO)) {
@@ -54,7 +64,8 @@ void term_config(void)
         initscr();
         //newterm();
         atexit(term_restore);
-        raw();
+        keypad(stdscr, true);
+        cbreak();
         noecho();
         move(0, 0);
         curs_set(1);
@@ -83,6 +94,30 @@ typedef struct {
 
 
 /* here we use ansi escape sequences to move the cursor LOL (quick test) */
+
+void cur_clear(term_ctx_t *ctx, vtparse_t *parser)
+{
+        if (parser->num_params == 0) {
+                clrtobot();
+                return;
+        }
+        if (parser->num_params == 1) {
+                switch(parser->params[0]) {
+                case 0:
+                        clrtobot();
+                        return;
+                case 1:
+                        /* not implemented */
+                        return;
+                case 2:
+                        clear();
+                        return;
+                }
+        }
+
+}
+
+
 void cur_attr(term_ctx_t *ctx, vtparse_t *parser)
 {
         if (parser->num_params == 0) {
@@ -304,6 +339,9 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
                 case 'm':
                         cur_attr(parser->user_data, parser);
                         break;
+                case 'J':
+                        cur_clear(parser->user_data, parser);
+                        break;
                 default:
                         break;
                 }
@@ -345,9 +383,11 @@ int main(int argc, char *argv[])
                 char *env[] = {
                         "PATH=/usr/bin:/bin",
                         "HOME=/home/andreas",
-                        "TERM=vt102",
+                        "TERM=vt100",
                         "LC_ALL=C",
                         "USER=andreas",
+                        "COLUMNS=100",
+                        "ROWS=25",
                         0
                 };
                 execve(exec_argv[0], exec_argv, env);
@@ -381,12 +421,35 @@ int main(int argc, char *argv[])
                                 }
                                 refresh();
                                 doupdate();
-                        } else if (rc == -1) {
-                                kill(getpid(), SIGTERM);
                         }
                         int in = getch();
                         if (in != ERR) {
-                                if (in >= 1 && in <= 127) {
+                                char keybuff[4];
+                                if (in == KEY_RESIZE) {
+                                        handle_resizing();
+                                        continue;
+                                }
+                                if (in == KEY_UP) {
+                                        sprintf(keybuff, "\033OA");
+                                        write(master, keybuff, 3);
+                                        continue;
+                                }
+                                if (in == KEY_DOWN) {
+                                        sprintf(keybuff, "\033OB");
+                                        write(master, keybuff, 3);
+                                        continue;
+                                }
+                                if (in == KEY_RIGHT) {
+                                        sprintf(keybuff, "\033OC");
+                                        write(master, keybuff, 3);
+                                        continue;
+                                }
+                                if (in == KEY_LEFT) {
+                                        sprintf(keybuff, "\033OD");
+                                        write(master, keybuff, 3);
+                                        continue;
+                                }
+                                if (in >= 1 && in < 256) {
                                         write(master, &in, 1);
                                         continue;
                                 }
