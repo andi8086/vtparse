@@ -134,6 +134,11 @@ void term_config(void)
         curs_set(1);
         scrollok(stdscr, true);
         refresh();
+
+        start_color();
+        init_pair(1, COLOR_WHITE, COLOR_BLACK);
+        init_pair(2, COLOR_GREEN, COLOR_BLACK); 
+        init_pair(3, COLOR_RED, COLOR_BLACK); 
 }
 
 
@@ -438,7 +443,7 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
 
 void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
 {
-
+        wattron(ctx->w, COLOR_PAIR(2));
         if (ctx->charset == 0) {
                 if (ctx->G0 == '0') {
                         if (ch >= 0x50 && ch <= 0x7F) {
@@ -626,6 +631,18 @@ void vt100_next_tab(term_ctx_t *ctx)
 }
 
 
+void vt100_bell(term_ctx_t *ctx)
+{
+        wattron(ctx->pw, COLOR_PAIR(3));
+        box(ctx->pw, 0, 0);
+        wrefresh(ctx->pw);
+        usleep(250000);
+        wattroff(ctx->pw, COLOR_PAIR(3));
+        box(ctx->pw, 0, 0);
+        wrefresh(ctx->pw);
+}
+
+
 void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch)
 {
         /* VT100 passive display support */
@@ -639,6 +656,9 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
         switch(action) {
         case VTPARSE_ACTION_EXECUTE:
                 switch (ch) {
+                case 7:
+                        vt100_bell(parser->user_data);
+                        break;
                 case 9:
                         vt100_next_tab(parser->user_data);
                         break;
@@ -824,6 +844,7 @@ int main(int argc, char *argv[])
         ctx.w = derwin(ctx.pw, ctx.dh, ctx.dw+1, ctx.mx, ctx.my);
         ctx.scroll_start = 0;
         ctx.scroll_stop = ctx.dh - 1;
+        wattron(ctx.w, COLOR_PAIR(2));
 
         box(ctx.pw, 0, 0);
         touchwin(ctx.pw);
