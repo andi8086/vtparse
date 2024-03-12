@@ -3,9 +3,15 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-void clear()
+void clear(int what)
 {
-        printf("\033[2J");
+        printf("\033[%dJ", what);
+        fflush(stdout);
+}
+
+void cursor_right(void)
+{
+        printf("\033[C");
         fflush(stdout);
 }
 
@@ -39,7 +45,31 @@ void scroll_reg(int start, int stop)
 
 int main(void)
 {
-        clear();
+        clear(2);
+        move(0, 0);
+        for (int i = 0; i < 100; i++) {
+                printf("haha ");
+        }
+        move(3, 20);
+        for (int i = 0; i < 1000; i++) {
+                //cursor_right();
+                printf("h");
+                fflush(stdout);
+                //usleep(1000000);
+        }
+
+        sleep(3);
+        clear(1);
+        sleep(3);
+        clear(2);
+        move(0, 0);
+        for (int i = 0; i < 100; i++) {
+                printf("haha ");
+        }
+        move(3, 20);
+        sleep(3);
+        clear(0);
+        sleep(3);
         move(26, 1);
         printf("Hallo");
         move(25, 1);

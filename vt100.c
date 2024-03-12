@@ -74,13 +74,11 @@ void term_frame_redraw(term_ctx_t *ctx)
         getyx(ctx->w, cy, cx);
         wrefresh(ctx->pw);
         wrefresh(ctx->w);
-        int y, x;
-        getyx(stdscr, y, x);
         box(ctx->pw, 0, 0);
         char coords_msg[64];
 
         snprintf(coords_msg, 63, "x = %d, y = %d, scroll_start = %d, scroll_stop = %d    ",
-                             cx, cy, ctx->scroll_start, ctx->scroll_stop);
+                             cx + 1, cy + 1, ctx->scroll_start + 1, ctx->scroll_stop + 1);
         mvwaddstr(stdscr, ctx->wy + ctx->wh + 2, 2, "The power of VT100 :-)");
         mvwaddstr(stdscr, ctx->wy + ctx->wh + 3, 2, coords_msg);
         refresh();
@@ -91,7 +89,6 @@ void term_frame_redraw(term_ctx_t *ctx)
 
 void term_restore(void)
 {
-//        tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
         endwin();
 }
 
@@ -128,28 +125,7 @@ void term_config(void)
                 exit(-1);
         }
 
-/*
-        struct winsize {
-                unsigned short ws_row;
-                unsigned short ws_col;
-                unsigned short ws_xpixel;
-                unsigned short ws_ypixel;
-        };
-
-        struct winsize w;
-        w.ws_row = 24;
-        w.ws_col = 80;
-
-        ioctl(STDIN_FILENO, TIOCSWINSZ, &w);
-
-
-/*        if (tcgetattr(STDIN_FILENO, &orig_termios) < 0) {
-                perror("Can't get terminal settings");
-                exit(-1);
-        }
-*/
         initscr();
-        //newterm();
         atexit(term_restore);
         keypad(stdscr, true);
         cbreak();
@@ -158,47 +134,43 @@ void term_config(void)
         curs_set(1);
         scrollok(stdscr, true);
         refresh();
-/*
-        struct termios raw;
-
-        raw = orig_termios;
-        raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
-
-        raw.c_oflag &= ~(OPOST);
-        raw.c_cflag |= (CS8);
-
-        raw.c_lflag &= ~(ECHO | ICANON | IEXTEN | ISIG);
-
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
-*/
-
 }
 
-
-/* here we use ansi escape sequences to move the cursor LOL (quick test) */
 
 void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
 {
         int x, y;
         if (parser->num_params == 0) {
                 wclrtoeol(ctx->w);
+                touchwin(ctx->pw); 
+                wrefresh(ctx->w);
+                term_frame_redraw(ctx);
                 return;
         }
         if (parser->num_params == 1) {
                 switch(parser->params[0]) {
                 case 0:
                         wclrtoeol(ctx->w);
+                        touchwin(ctx->pw); 
                         term_frame_redraw(ctx);
                         return;
                 case 1:
-                        /* not implemented */
+                        getyx(ctx->w, y, x);
+                        wmove(ctx->w, y, 0);
+                        for (int i = 0; i < x-1; i++) {
+                                waddch(ctx->w, ' '); 
+                        }
+                        touchwin(ctx->pw);
+                        wrefresh(ctx->w);
+                        wmove(ctx->w, y, x);
                         return;
                 case 2:
                         getyx(ctx->w, y, x);
                         wmove(ctx->w, y, 0);
                         wclrtoeol(ctx->w);
+                        touchwin(ctx->pw);
+                        wrefresh(ctx->w);
                         term_frame_redraw(ctx);
-                        curs_set(1);
                         wmove(ctx->w, y, x);
                         return;
                 }
@@ -321,15 +293,6 @@ void vt100_line_up(term_ctx_t *ctx)
         int x, y;
         getyx(ctx->w, y, x);
 
-        /* we can move the cursor, but no scroll if
-         * outside the scrolling range */
-        if (y > 0) {
-                wmove(ctx->w, y - 1, x);
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
-                return;
-        }
-
         if (y == ctx->scroll_start) {
                 wscrl(ctx->w, -1);
                 touchwin(ctx->pw);
@@ -337,7 +300,14 @@ void vt100_line_up(term_ctx_t *ctx)
                 return;
         }
 
-        return;
+        /* we can move the cursor, but no scroll if
+         * outside the scrolling range */
+        if (y > 0) {
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                wmove(ctx->w, y - 1, x);
+                return;
+        }
 }
 
 
@@ -347,16 +317,9 @@ void vt100_line_down(term_ctx_t *ctx)
         wrefresh(ctx->w);
 
         int maxx, maxy, y, x;
+
         getmaxyx(ctx->w, maxy, maxx);
         getyx(ctx->w, y, x);
-        /* we can move the cursor if outside of scroll region,
-         * but we cannot scroll */
-        if (y < maxy - 1) {
-                wmove(ctx->w, y + 1, x);
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
-                return;
-        }
 
         if (y == ctx->scroll_stop) {
                 wscrl(ctx->w, 1);
@@ -365,7 +328,14 @@ void vt100_line_down(term_ctx_t *ctx)
                 return;
         }
 
-        return;
+        /* we can move the cursor if outside of scroll region,
+         * but we cannot scroll */
+        if (y < maxy - 1) {
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                wmove(ctx->w, y + 1, x);
+                return;
+        }
 }
 
 
@@ -374,21 +344,21 @@ void cur_right(term_ctx_t *ctx, vtparse_t *parser)
         int x, y;
         getyx(ctx->w, y, x);
         if (parser->num_params == 0) {
-                if (x < ctx->ww) {
+                if (x < ctx->dw - 2) {
                         x++;
-                        wmove(ctx->w, y, x);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, y, x);
                 }
         } else {
                 if (parser->params[0] == 0) {
                         parser->params[0] = 1;
                 }
-                if (x + parser->params[0] <= ctx->dw) {
+                if (x + parser->params[0] <= ctx->dw - 2) {
                         x += parser->params[0];
-                        wmove(ctx->w, y, x);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, y, x);
                 }
         }
 }
@@ -399,10 +369,9 @@ void cursor_back(term_ctx_t *ctx)
         int x, y;
         getyx(ctx->w, y, x);
         if (x > ctx->mx) {
-                mvwaddch(ctx->w, y, x-1, ' ');
-                wmove(ctx->w, y, x-1);
                 touchwin(ctx->pw);
                 wrefresh(ctx->w);
+                wmove(ctx->w, y, x-1);
         }
 }
 
@@ -414,19 +383,19 @@ void cur_left(term_ctx_t *ctx, vtparse_t *parser)
         if (parser->num_params == 0) {
                 if (x > 0) {
                         x--;
-                        wmove(ctx->w, y, x);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, y, x);
                 }
         } else {
+                if (parser->params[0] == 0) {
+                        parser->params[0] = 1;
+                }
                 if (x - parser->params[0] >= 0) {
-                        if (parser->params[0] == 0) {
-                                parser->params[0] = 1;
-                        }
                         x -= parser->params[0];
-                        wmove(ctx->w, y, x);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, y, x);
                 }
         }
 }
@@ -444,8 +413,8 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
         int x, y;
         getyx(ctx->w, y, x);
         if (parser->num_params == 1) {
-                if (parser->params[0] <= ctx->dh + 1 &&
-                    parser->params[0] >= 0) {
+                if (parser->params[0] <= ctx->dh &&
+                    parser->params[0] > 0) {
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
                         wmove(ctx->w, parser->params[0] - 1, x);
@@ -454,9 +423,9 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
         }
 
         if (parser->num_params == 2) {
-                if (parser->params[0] <= ctx->dh + 1 &&
+                if (parser->params[0] <= ctx->dh &&
                     parser->params[0] > 0 &&
-                    parser->params[1] <= ctx->dw + 1 &&
+                    parser->params[1] <= ctx->dw &&
                     parser->params[1] > 0) {
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
@@ -474,7 +443,6 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
                 if (ctx->G0 == '0') {
                         if (ch >= 0x50 && ch <= 0x7F) {
                                 waddstr(ctx->w, DEC_special_as_utf8[ch - 0x50]);
-                                // waddstr(stdscr, wtest);
                         } else {
                                 waddch(ctx->w, '?');
                         }
@@ -487,7 +455,6 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
                 if (ctx->G1 == '0') {
                         if (ch >= 0x50 && ch <= 0x7F) {
                                 waddstr(ctx->w, DEC_special_as_utf8[ch - 0x50]);
-                                // waddwstr(stdscr, wtest);
                         } else {
                                 waddch(ctx->w, '?');
                         }
@@ -497,26 +464,26 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
         }
         touchwin(ctx->pw);
         wrefresh(ctx->w);
+       
+        int cx, cy;
+        getyx(ctx->w, cy, cx);
+        if (cx == 0) {
+                term_frame_redraw(ctx);
+        }
+
 }
 
 
 void cur_newline(term_ctx_t *ctx)
 {
-        int maxx, maxy, x, y;
+        int  y, _;
 
-        wclrtoeol(ctx->w);
-        /* check where we are */
-        getyx(ctx->w, y, x);
-        if (y == ctx->dh) {
-                scroll(ctx->w);
-                wmove(ctx->w, y-1, x);
-                y--;
-        }
-        waddch(ctx->w, '\n');
-        wmove(ctx->w, y+1, 0);
-        term_frame_redraw(ctx);
+        vt100_line_down(ctx);
+        getyx(ctx->w, y, _);
+        term_frame_redraw(ctx); 
         touchwin(ctx->pw);
         wrefresh(ctx->w);
+        wmove(ctx->w, y, 0);
 
         return;
 }
@@ -637,6 +604,28 @@ void vt100_set_scroll_region(term_ctx_t *ctx, vtparse_t *parser)
 }
 
 
+void vt100_cursor_col_zero(term_ctx_t *ctx)
+{
+        int y, _;
+
+        getyx(ctx->w, y, _);
+        // touchwin(ctx->pw);
+        // wrefresh(ctx->w);
+        wmove(ctx->w, y, 0);
+}
+
+
+void vt100_next_tab(term_ctx_t *ctx)
+{
+        int y, x;
+
+        getyx(ctx->w, y, x);
+        x = ((x / 8) + 1) * 8;
+        wmove(ctx->w, y, x);
+
+}
+
+
 void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch)
 {
         /* VT100 passive display support */
@@ -650,15 +639,15 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
         switch(action) {
         case VTPARSE_ACTION_EXECUTE:
                 switch (ch) {
-                case 7:
+                case 9:
+                        vt100_next_tab(parser->user_data);
                         break;
                 case 10:
                         /* new line */
                         cur_newline(parser->user_data);
                         break;
                 case 13:
-                        // printf("%c", ch);
-                        // cur_down(parser->user_data, parser);
+                        vt100_cursor_col_zero(parser->user_data);
                         break;
                 case 14:
                         vt100_shift_out(parser->user_data);
@@ -793,6 +782,14 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
 }
 
 
+void cursor_fix(WINDOW *w)
+{
+        int cx, cy;
+        getyx(w, cy, cx);
+        wmove(w, cy, cx);
+}
+
+
 int main(int argc, char *argv[])
 {
         setlocale(LC_ALL, "en_US.UTF-8");
@@ -815,16 +812,16 @@ int main(int argc, char *argv[])
 
         term_config();
 
-        ctx.pw = newwin(28, 82, 1, 1);
         ctx.ww = 82;
-        ctx.wh = 28;
-        ctx.dh = 26;
-        ctx.dw = 80;
+        ctx.wh = 27;
+        ctx.pw = newwin(ctx.wh, ctx.ww, 1, 1);
+        ctx.dh = ctx.wh - 2;
+        ctx.dw = ctx.ww - 2;
         ctx.wx = 1;
         ctx.wy = 1;
         ctx.mx = 1;
         ctx.my = 1;
-        ctx.w = derwin(ctx.pw, ctx.dh, ctx.dw, ctx.mx, ctx.my);
+        ctx.w = derwin(ctx.pw, ctx.dh, ctx.dw+1, ctx.mx, ctx.my);
         ctx.scroll_start = 0;
         ctx.scroll_stop = ctx.dh - 1;
 
@@ -888,6 +885,7 @@ int main(int argc, char *argv[])
                                 }
                                 touchwin(ctx.pw);
                                 wrefresh(ctx.w);
+                                cursor_fix(ctx.w);
                                 doupdate();
                         }
                         int in = getch();
