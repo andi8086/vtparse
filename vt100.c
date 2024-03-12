@@ -592,7 +592,7 @@ void vt100_set_scroll_region(term_ctx_t *ctx, vtparse_t *parser)
         int stop = parser->params[1];
 
         /* now the ANSI parameters are 1-based and curses are 0-based */
-        if (start < 1 || start > y - 1 || stop > y || stop < 2 ||
+        if (start < 1 || start > y || stop > y + 1 || stop < 2 ||
             stop <= start) {
                 /* invalid parameter */
                 return;
