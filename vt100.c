@@ -46,6 +46,8 @@ typedef struct {
         int dw; /* display width */
         int dh; /* display height */
         int master;
+        int scroll_start;
+        int scroll_stop;
 } term_ctx_t;
 
 
@@ -68,15 +70,22 @@ const char *DEC_special_as_utf8[48] = {
 
 void term_frame_redraw(term_ctx_t *ctx)
 {
+        int cx, cy;
+        getyx(ctx->w, cy, cx);
         wrefresh(ctx->pw);
         wrefresh(ctx->w);
         int y, x;
         getyx(stdscr, y, x);
         box(ctx->pw, 0, 0);
+        char coords_msg[64];
+
+        snprintf(coords_msg, 63, "x = %d, y = %d, scroll_start = %d, scroll_stop = %d    ",
+                             cx, cy, ctx->scroll_start, ctx->scroll_stop);
         mvwaddstr(stdscr, ctx->wy + ctx->wh + 2, 2, "The power of VT100 :-)");
+        mvwaddstr(stdscr, ctx->wy + ctx->wh + 3, 2, coords_msg);
         refresh();
         doupdate();
-        wmove(stdscr, y, x);
+        wmove(ctx->w, cy, cx);
 }
 
 
@@ -307,6 +316,59 @@ void cur_down(term_ctx_t *ctx, vtparse_t *parser)
 }
 
 
+void vt100_line_up(term_ctx_t *ctx)
+{
+        int x, y;
+        getyx(ctx->w, y, x);
+
+        /* we can move the cursor, but no scroll if
+         * outside the scrolling range */
+        if (y > 0) {
+                wmove(ctx->w, y - 1, x);
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                return;
+        }
+
+        if (y == ctx->scroll_start) {
+                wscrl(ctx->w, -1);
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                return;
+        }
+
+        return;
+}
+
+
+void vt100_line_down(term_ctx_t *ctx)
+{
+        touchwin(ctx->pw);
+        wrefresh(ctx->w);
+
+        int maxx, maxy, y, x;
+        getmaxyx(ctx->w, maxy, maxx);
+        getyx(ctx->w, y, x);
+        /* we can move the cursor if outside of scroll region,
+         * but we cannot scroll */
+        if (y < maxy - 1) {
+                wmove(ctx->w, y + 1, x);
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                return;
+        }
+
+        if (y == ctx->scroll_stop) {
+                wscrl(ctx->w, 1);
+                touchwin(ctx->pw);
+                wrefresh(ctx->w);
+                return;
+        }
+
+        return;
+}
+
+
 void cur_right(term_ctx_t *ctx, vtparse_t *parser)
 {
         int x, y;
@@ -373,9 +435,9 @@ void cur_left(term_ctx_t *ctx, vtparse_t *parser)
 void cur_home(term_ctx_t *ctx, vtparse_t *parser)
 {
         if (parser->num_params == 0) {
-                wmove(ctx->w, 0, 0);
                 touchwin(ctx->pw);
                 wrefresh(ctx->w);
+                wmove(ctx->w, 0, 0);
                 return;
         }
 
@@ -384,9 +446,9 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
         if (parser->num_params == 1) {
                 if (parser->params[0] <= ctx->dh + 1 &&
                     parser->params[0] >= 0) {
-                        wmove(ctx->w, parser->params[0] - 1, x);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, parser->params[0] - 1, x);
                 }
                 return;
         }
@@ -396,9 +458,9 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
                     parser->params[0] > 0 &&
                     parser->params[1] <= ctx->dw + 1 &&
                     parser->params[1] > 0) {
-                        wmove(ctx->w, parser->params[0] - 1, parser->params[1] - 1);
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
+                        wmove(ctx->w, parser->params[0] - 1, parser->params[1] - 1);
                 }
                 return;
         }
@@ -540,6 +602,41 @@ void vt100_shift_in(term_ctx_t *ctx)
 }
 
 
+void vt100_set_scroll_region(term_ctx_t *ctx, vtparse_t *parser)
+{
+        int y, x;
+
+        getmaxyx(ctx->w, y, x);
+        /* in NCURSES, we are zero-based, and the name is misleading,
+         * it returns the number of columns and rows... so we have
+         * to subtract one to get the max coordinates */
+        y--;
+        x--;
+
+        if (parser->num_params == 0) {
+                /* reset region to whole window */
+               wsetscrreg(ctx->w, 0, y);
+               ctx->scroll_start = 0;
+               ctx->scroll_stop = y;
+               return;
+        }
+
+        int start = parser->params[0];
+        int stop = parser->params[1];
+
+        /* now the ANSI parameters are 1-based and curses are 0-based */
+        if (start < 1 || start > y - 1 || stop > y || stop < 2 ||
+            stop <= start) {
+                /* invalid parameter */
+                return;
+        }
+        ctx->scroll_start = start - 1;
+        ctx->scroll_stop = stop - 1;
+        wsetscrreg(ctx->w, start - 1, stop - 1);
+        term_frame_redraw(ctx);
+}
+
+
 void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch)
 {
         /* VT100 passive display support */
@@ -601,6 +698,12 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
                         break;
                 case '>':
                         vt100_normal_keypad(parser->user_data);
+                        break;
+                case 'M':
+                        vt100_line_up(parser->user_data);
+                        break;
+                case 'D':
+                        vt100_line_down(parser->user_data);
                         break;
                 default:
                         esc_unsupported(parser->user_data, parser, ch);
@@ -669,6 +772,13 @@ void parser_callback(vtparse_t *parser, vtparse_action_t action, unsigned int ch
                                 cur_unsupported(parser->user_data, parser, ch);
                         }
                         break;
+                case 'r':
+                        if (parser->num_params == 2 || parser->num_params == 0) {
+                                vt100_set_scroll_region(parser->user_data, parser);
+                        } else {
+                                cur_unsupported(parser->user_data, parser, ch);
+                        }
+                        break;
                 default:
                         cur_unsupported(parser->user_data, parser, ch);
                         break;
@@ -715,9 +825,13 @@ int main(int argc, char *argv[])
         ctx.mx = 1;
         ctx.my = 1;
         ctx.w = derwin(ctx.pw, ctx.dh, ctx.dw, ctx.mx, ctx.my);
+        ctx.scroll_start = 0;
+        ctx.scroll_stop = ctx.dh - 1;
+
         box(ctx.pw, 0, 0);
         touchwin(ctx.pw);
         wrefresh(ctx.w);
+        scrollok(ctx.pw, true);
         scrollok(ctx.w, true);
         term_frame_redraw(&ctx);
 

@@ -1,7 +1,7 @@
 
 RUBY_GENERATION_FILES = vtparse_gen_c_tables.rb vtparse_tables.rb
 
-all: vtparse_table.c vtparse_table.h test libvtparse.a vt100
+all: vtparse_table.c vtparse_table.h test libvtparse.a vt100 ntest
 
 clean:
 	rm -f vtparse_table.c vtparse_table.h test vtparse.o vtparse_table.o libvtparse.a
@@ -17,6 +17,9 @@ test: vtparse.c vtparse.h vtparse_table.c vtparse_table.h vtparse_test.c
 
 vt100: libvtparse.a vt100.c
 	gcc -o vt100 vt100.c -L. -lvtparse -lncursesw
+
+ntest: ntest.c
+	gcc -o $@ $^ -L. -lncursesw
 
 libvtparse.a: vtparse.o vtparse_table.o
 	rm -f $@
