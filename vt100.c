@@ -138,6 +138,8 @@ void term_config(void)
         init_pair(1, COLOR_WHITE, COLOR_BLACK);
         init_pair(2, COLOR_GREEN, COLOR_BLACK); 
         init_pair(3, COLOR_RED, COLOR_BLACK); 
+
+        nodelay(stdscr, true);
 }
 
 
@@ -856,7 +858,7 @@ void handle_input(term_ctx_t *ctx, int in)
 }
 
 
-void handle_output(term_ctx_t *ctx)
+int handle_output(term_ctx_t *ctx)
 {
         int rc;
         char buffer[128];
@@ -876,91 +878,128 @@ void handle_output(term_ctx_t *ctx)
         /* look if something is there on child's stdout */
         rc = select(ctx->master + 1, &fds, NULL, NULL, &timeout);
         if (rc <= 0) {
-                return;
+                return 0;
         }
 
         rc = read(ctx->master, buffer, sizeof(buffer));
         if (rc > 0) {
                 /* handle by ANSI Escape Sequence State Machine */
                 vtparse(&ctx->ansi_parser, (unsigned char *)buffer, rc);
+        } else {
+                return -1;
         }
+        return 0;
 }
 
 
-int main(int argc, char *argv[])
+
+term_ctx_t *new_term(int x, int y, int cols, int rows)
 {
-        setlocale(LC_ALL, "en_US.UTF-8");
+        term_ctx_t *t = malloc(sizeof(term_ctx_t));
+        if (!t) {
+                return NULL;
+        }
 
-        pid_t pid;
+        t->log = fopen("log.txt", "w+"); 
 
-        term_ctx_t ctx;
-        ctx.log = fopen("log.txt", "w+");
-        ctx.cursor_mode = CURSOR_NORMAL;
-        ctx.keypad_mode = KEYPAD_NORMAL;
-        ctx.charset = 0;
-        ctx.G0 = 'B';
-        ctx.G1 = 'B';
+        t->cursor_mode = CURSOR_NORMAL;
+        t->keypad_mode = KEYPAD_NORMAL;
+        t->charset = 0;
+        t->G0 = 'B';
+        t->G1 = 'B';
 
-        term_config();
+        t->ww = cols + 2;
+        t->wh = rows + 2;
+        t->pw = newwin(t->wh, t->ww, x, y);
+        t->dh = t->wh - 2;
+        t->dw = t->ww - 2;
+        t->wx = x;
+        t->wy = y;
+        t->mx = 1;
+        t->my = 1;
+        t->w = derwin(t->pw, t->dh, t->dw+1, t->mx, t->my);
+        t->scroll_start = 0;
+        t->scroll_stop = t->dh - 1;
 
-        ctx.ww = 82;
-        ctx.wh = 27;
-        ctx.pw = newwin(ctx.wh, ctx.ww, 1, 1);
-        ctx.dh = ctx.wh - 2;
-        ctx.dw = ctx.ww - 2;
-        ctx.wx = 1;
-        ctx.wy = 1;
-        ctx.mx = 1;
-        ctx.my = 1;
-        ctx.w = derwin(ctx.pw, ctx.dh, ctx.dw+1, ctx.mx, ctx.my);
-        ctx.scroll_start = 0;
-        ctx.scroll_stop = ctx.dh - 1;
-        wattron(ctx.w, COLOR_PAIR(2));
+        vtparse_init(&t->ansi_parser, parser_callback);
+        t->ansi_parser.user_data = t;
 
-        box(ctx.pw, 0, 0);
-        touchwin(ctx.pw);
-        wrefresh(ctx.w);
-        scrollok(ctx.pw, true);
-        scrollok(ctx.w, true);
-        term_frame_redraw(&ctx);
+        wattron(t->w, COLOR_PAIR(2));
+        box(t->pw, 0, 0);
+        scrollok(t->w, true);
 
-        vtparse_init(&ctx.ansi_parser, parser_callback);
-        ctx.ansi_parser.user_data = &ctx;
+        touchwin(t->pw);
+        wrefresh(t->w);
 
-        pid = forkpty(&ctx.master, NULL, NULL, NULL);
+        return t;
+}
+
+
+pid_t term_process(term_ctx_t *ctx, char **argv, char **env)
+{
+        pid_t pid = forkpty(&ctx->master, NULL, NULL, NULL);
 
         if (pid == -1) {
                 printf("Error with forkpty");
                 return -1;
         }
 
-        if (!pid) {
-                char* exec_argv[] = {"/bin/bash", NULL};
-                char *env[] = {
-                        "PATH=/usr/bin:/bin",
-                        "HOME=/home/andreas",
-                        "TERM=vt100",
-                        "LC_ALL=C",
-                        "USER=andreas",
-                        0
-                };
-                execve(exec_argv[0], exec_argv, env);
+        if (pid == 0) {
+                /* child */
+
+                execve(argv[0], argv, env);
                 perror("CHILD: execvp");
                 return EXIT_FAILURE;
-        } else {
-                /* main pid */
-                handle_resizing(&ctx);
+        }
 
-                nodelay(stdscr, true);
-                while (1) {
-                        handle_output(&ctx);
+        /* not reached by child */
+        return pid;
+}
 
-                        int in = getch();
-                        if (in != ERR) {
-                                handle_input(&ctx, in);
-                        }
+
+int main(int argc, char *argv[])
+{
+        setlocale(LC_ALL, "en_US.UTF-8");
+        term_config();
+
+        pid_t pid;
+
+        term_ctx_t *ctx = new_term(1, 1, 80, 25);
+        if (!ctx) {
+                printf("Out of memory\n");
+                return -1;
+        }
+
+
+        char *exec_argv[] = {"/bin/bash", NULL};
+        char *env[] = {
+                "PATH=/usr/bin:/bin",
+                "HOME=/home/andreas",
+                "TERM=vt100",
+                "LC_ALL=C",
+                "USER=andreas",
+                0
+        };
+    
+        term_frame_redraw(ctx);
+
+        pid = term_process(ctx, exec_argv, env);
+
+
+        /* handling one terminal process in main thread */
+        handle_resizing(ctx);
+        while (1) {
+                if (handle_output(ctx) < 0) {
+                        /* we are finished with child process */
+                        break;
+                }
+
+                int in = getch();
+                if (in != ERR) {
+                        handle_input(ctx, in);
                 }
         }
+
         if (waitpid(pid, NULL, 0) == -1) {
                 perror("PARENT: waitpid");
                 return EXIT_FAILURE;
