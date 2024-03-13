@@ -17,8 +17,7 @@ test: vtparse.c vtparse.h vtparse_table.c vtparse_table.h vtparse_test.c
 
 libvtparse.a: vtparse.o vtparse_table.o
 	rm -f $@
-	ar r $@ $^
-	ranlib $@
+	ar rs $@ $^
 
 .c.o:
 	gcc -O3 -Wall -o $@ -c $<
