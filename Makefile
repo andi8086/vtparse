@@ -1,34 +1,34 @@
+all: libvtparse.a vt100 ntest
 
-RUBY_GENERATION_FILES = vtparse_gen_c_tables.rb vtparse_tables.rb
+PROG_OBJs = \
+        vt100.o
 
-all: vtparse_table.c vtparse_table.h test libvtparse.a vt100 ntest
+CFLAGS += \
+        -I./vtparse \
+        -O2 \
+        -Wall
+
+LDFLAGS += \
+        -L. \
+        -L./vtparse \
+        -lvtparse \
+        -lncursesw
 
 clean:
-	rm -f vtparse_table.c vtparse_table.h test vtparse.o vtparse_table.o libvtparse.a
+	$(MAKE) -C vtparse clean
+	rm -f vt100 ntest *.o
 
-vtparse_table.c: $(RUBY_GENERATION_FILES)
-	ruby vtparse_gen_c_tables.rb
+libvtparse.a:
+	$(MAKE) -C vtparse all
 
-vtparse_table.h: $(RUBY_GENERATION_FILES)
-	ruby vtparse_gen_c_tables.rb
-
-test: vtparse.c vtparse.h vtparse_table.c vtparse_table.h vtparse_test.c
-	gcc -Wall -o test vtparse_test.c vtparse.c vtparse_table.c
-
-vt100: libvtparse.a vt100.c
-	gcc -o vt100 vt100.c -L. -lvtparse -lncursesw
+vt100: libvtparse.a $(PROG_OBJs)
+	gcc -o $@ $(PROG_OBJs) $(LDFLAGS)
 
 ntest: ntest.c
-	gcc -o $@ $^ -L. -lncursesw
-
-libvtparse.a: vtparse.o vtparse_table.o
-	rm -f $@
-	ar r $@ $^
-	ranlib $@
+	gcc $(CFLAGS) -o $@ $^ -L. -lncursesw
 
 .c.o:
-	gcc -O3 -Wall -o $@ -c $<
-
+	gcc $(CFLAGS) -o $@ -c $<
 
 .PHONY: all clean
 
