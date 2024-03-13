@@ -808,6 +808,53 @@ void cursor_fix(WINDOW *w)
 }
 
 
+void handle_input(term_ctx_t *ctx, int in)
+{
+        char keybuff[4];
+
+        switch (in) {
+        case KEY_RESIZE:
+                handle_resizing(ctx);
+                break;
+        case KEY_UP:  
+                sprintf(keybuff, key_up_seq[ctx->cursor_mode]);
+                write(ctx->master, keybuff, 3);
+                break;
+        case KEY_DOWN:
+                sprintf(keybuff, key_down_seq[ctx->cursor_mode]);
+                write(ctx->master, keybuff, 3);
+                break;
+        case KEY_RIGHT:
+                sprintf(keybuff, key_right_seq[ctx->cursor_mode]);
+                write(ctx->master, keybuff, 3);
+                break;
+        case KEY_LEFT:
+                sprintf(keybuff, key_left_seq[ctx->cursor_mode]);
+                write(ctx->master, keybuff, 3);
+                break;
+        case KEY_BACKSPACE:
+        case 0177:
+                sprintf(keybuff, "\177");
+                write(ctx->master, keybuff, 1);
+                break;
+        default:
+                if (in >= 1 && in <= 126) {
+                        write(ctx->master, &in, 1);
+                        break; 
+                }
+                if (in >= 256 && in < 256*256 - 1) {
+                        write(ctx->master, &in, 2);
+                        break; 
+                }
+                if (in > 256*256 && in < 256*256*256 - 1) {
+                        write(ctx->master, &in, 3);
+                        break; 
+                }
+                break;
+        }
+}
+
+
 int main(int argc, char *argv[])
 {
         setlocale(LC_ALL, "en_US.UTF-8");
@@ -903,51 +950,10 @@ int main(int argc, char *argv[])
                                 cursor_fix(ctx.w);
                                 doupdate();
                         }
+
                         int in = getch();
                         if (in != ERR) {
-                                char keybuff[4];
-                                if (in == KEY_RESIZE) {
-                                        handle_resizing(&ctx);
-                                        continue;
-                                }
-                                if (in == KEY_UP) {
-                                        sprintf(keybuff, key_up_seq[ctx.cursor_mode]);
-                                        write(ctx.master, keybuff, 3);
-                                        continue;
-                                }
-                                if (in == KEY_DOWN) {
-                                        sprintf(keybuff, key_down_seq[ctx.cursor_mode]);
-                                        write(ctx.master, keybuff, 3);
-                                        continue;
-                                }
-                                if (in == KEY_RIGHT) {
-                                        sprintf(keybuff, key_right_seq[ctx.cursor_mode]);
-                                        write(ctx.master, keybuff, 3);
-                                        continue;
-                                }
-                                if (in == KEY_LEFT) {
-                                        sprintf(keybuff, key_left_seq[ctx.cursor_mode]);
-                                        write(ctx.master, keybuff, 3);
-                                        continue;
-                                }
-                                if (in == KEY_BACKSPACE ||
-                                    in == 0177) {
-                                        sprintf(keybuff, "\177");
-                                        write(ctx.master, keybuff, 1);
-                                        continue;
-                                }
-                                if (in >= 1 && in <= 126) {
-                                        write(ctx.master, &in, 1);
-                                        continue;
-                                }
-                                if (in >= 256 && in < 256*256 - 1) {
-                                        write(ctx.master, &in, 2);
-                                        continue;
-                                }
-                                if (in > 256*256 && in < 256*256*256 - 1) {
-                                        write(ctx.master, &in, 3);
-                                        continue;
-                                }
+                                handle_input(&ctx, in);
                         }
                 }
         }
