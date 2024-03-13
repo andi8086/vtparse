@@ -15,8 +15,6 @@
 #include "vtparse.h"
 
 
-static struct termios orig_termios;
-
 typedef enum {
         CURSOR_NORMAL = 0,
         CURSOR_APP
@@ -75,9 +73,9 @@ void term_frame_redraw(term_ctx_t *ctx)
         wrefresh(ctx->pw);
         wrefresh(ctx->w);
         box(ctx->pw, 0, 0);
-        char coords_msg[64];
+        char coords_msg[84];
 
-        snprintf(coords_msg, 63, "x = %d, y = %d, scroll_start = %d, scroll_stop = %d    ",
+        snprintf(coords_msg, 83, "x = %d, y = %d, scroll_start = %d, scroll_stop = %d    ",
                              cx + 1, cy + 1, ctx->scroll_start + 1, ctx->scroll_stop + 1);
         mvwaddstr(stdscr, ctx->wy + ctx->wh + 2, 2, "The power of VT100 :-)");
         mvwaddstr(stdscr, ctx->wy + ctx->wh + 3, 2, coords_msg);
@@ -321,7 +319,7 @@ void vt100_line_down(term_ctx_t *ctx)
         touchwin(ctx->pw);
         wrefresh(ctx->w);
 
-        int maxx, maxy, y, x;
+        int maxx [[ maybe_unused ]], maxy, y, x;
 
         getmaxyx(ctx->w, maxy, maxx);
         getyx(ctx->w, y, x);
@@ -415,7 +413,7 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
                 return;
         }
 
-        int x, y;
+        int x, y [[ maybe_unused ]];
         getyx(ctx->w, y, x);
         if (parser->num_params == 1) {
                 if (parser->params[0] <= ctx->dh &&
@@ -470,7 +468,7 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
         touchwin(ctx->pw);
         wrefresh(ctx->w);
        
-        int cx, cy;
+        int cx, cy [[ maybe_unused ]];
         getyx(ctx->w, cy, cx);
         if (cx == 0) {
                 term_frame_redraw(ctx);
@@ -481,7 +479,7 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
 
 void cur_newline(term_ctx_t *ctx)
 {
-        int  y, _;
+        int  y, _ [[ maybe_unused ]];
 
         vt100_line_down(ctx);
         getyx(ctx->w, y, _);
@@ -611,7 +609,7 @@ void vt100_set_scroll_region(term_ctx_t *ctx, vtparse_t *parser)
 
 void vt100_cursor_col_zero(term_ctx_t *ctx)
 {
-        int y, _;
+        int y, _ [[ maybe_unused ]];
 
         getyx(ctx->w, y, _);
         // touchwin(ctx->pw);
@@ -814,11 +812,7 @@ int main(int argc, char *argv[])
 {
         setlocale(LC_ALL, "en_US.UTF-8");
 
-        int MAXLINE = 2000;
-        int fd1[2];
-        int fd2[2];
         pid_t pid;
-        char line[MAXLINE];
 
         vtparse_t parser;
 
