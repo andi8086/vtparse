@@ -46,6 +46,7 @@ typedef struct {
         int master;
         int scroll_start;
         int scroll_stop;
+        vtparse_t ansi_parser;
 } term_ctx_t;
 
 
@@ -855,13 +856,42 @@ void handle_input(term_ctx_t *ctx, int in)
 }
 
 
+void handle_output(term_ctx_t *ctx)
+{
+        int rc;
+        char buffer[128];
+        struct timeval timeout;
+        
+        touchwin(ctx->pw);
+        wrefresh(ctx->w);
+        refresh();
+        doupdate();
+
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 100;
+        fd_set fds;
+        FD_ZERO(&fds);
+        FD_SET(ctx->master, &fds);
+        
+        /* look if something is there on child's stdout */
+        rc = select(ctx->master + 1, &fds, NULL, NULL, &timeout);
+        if (rc <= 0) {
+                return;
+        }
+
+        rc = read(ctx->master, buffer, sizeof(buffer));
+        if (rc > 0) {
+                /* handle by ANSI Escape Sequence State Machine */
+                vtparse(&ctx->ansi_parser, (unsigned char *)buffer, rc);
+        }
+}
+
+
 int main(int argc, char *argv[])
 {
         setlocale(LC_ALL, "en_US.UTF-8");
 
         pid_t pid;
-
-        vtparse_t parser;
 
         term_ctx_t ctx;
         ctx.log = fopen("log.txt", "w+");
@@ -894,10 +924,10 @@ int main(int argc, char *argv[])
         scrollok(ctx.w, true);
         term_frame_redraw(&ctx);
 
-        parser.user_data = &ctx;
-        vtparse_init(&parser, parser_callback);
-        pid = forkpty(&ctx.master, NULL, NULL, NULL);
+        vtparse_init(&ctx.ansi_parser, parser_callback);
+        ctx.ansi_parser.user_data = &ctx;
 
+        pid = forkpty(&ctx.master, NULL, NULL, NULL);
 
         if (pid == -1) {
                 printf("Error with forkpty");
@@ -923,33 +953,7 @@ int main(int argc, char *argv[])
 
                 nodelay(stdscr, true);
                 while (1) {
-                        int rcv;
-
-                        char buffer[128];
-                        touchwin(ctx.pw);
-                        wrefresh(ctx.w);
-                        refresh();
-                        doupdate();
-
-                        /* look if something is there on child's stdout */
-                        struct timeval timeout;
-                        timeout.tv_sec = 0;
-                        timeout.tv_usec = 100;
-                        fd_set fds;
-                        FD_ZERO(&fds);
-                        FD_SET(ctx.master, &fds);
-
-                        int rc = select(ctx.master + 1, &fds, NULL, NULL, &timeout);
-                        if (rc > 0) {
-                                rcv = read(ctx.master, buffer, sizeof(buffer));
-                                if (rcv > 0) {
-                                        vtparse(&parser, (unsigned char *)buffer, rcv);
-                                }
-                                touchwin(ctx.pw);
-                                wrefresh(ctx.w);
-                                cursor_fix(ctx.w);
-                                doupdate();
-                        }
+                        handle_output(&ctx);
 
                         int in = getch();
                         if (in != ERR) {
