@@ -836,7 +836,6 @@ void handle_input(term_ctx_t *ctx, int in)
                 write(ctx->master, keybuff, 3);
                 break;
         case KEY_BACKSPACE:
-        case 0177:
                 sprintf(keybuff, "\177");
                 write(ctx->master, keybuff, 1);
                 break;
@@ -885,10 +884,12 @@ int handle_output(term_ctx_t *ctx)
         if (rc > 0) {
                 /* handle by ANSI Escape Sequence State Machine */
                 vtparse(&ctx->ansi_parser, (unsigned char *)buffer, rc);
-        } else {
-                return -1;
+                return 0;
         }
-        return 0;
+
+        /* read returns 0 despite select was > 0, this means,
+           the socket has closed and child has terminated */
+        return -1;
 }
 
 
@@ -940,37 +941,37 @@ pid_t term_process(term_ctx_t *ctx, char **argv, char **env)
         pid_t pid = forkpty(&ctx->master, NULL, NULL, NULL);
 
         if (pid == -1) {
-                printf("Error with forkpty");
+                perror("forkpty");
                 return -1;
         }
 
         if (pid == 0) {
-                /* child */
-
+                /* replace child process */
                 execve(argv[0], argv, env);
+                /* only reaches here in case of error */
                 perror("CHILD: execvp");
                 return EXIT_FAILURE;
         }
 
-        /* not reached by child */
         return pid;
 }
 
 
 int main(int argc, char *argv[])
 {
+        /* Initialice locale and ncurses */
         setlocale(LC_ALL, "en_US.UTF-8");
         term_config();
 
-        pid_t pid;
-
+        /* create a new virtual terminal window */
         term_ctx_t *ctx = new_term(1, 1, 80, 25);
         if (!ctx) {
-                printf("Out of memory\n");
+                perror("new_term");
                 return -1;
         }
 
-
+        /* execute process in virtual terminal with given
+           environment */
         char *exec_argv[] = {"/bin/bash", NULL};
         char *env[] = {
                 "PATH=/usr/bin:/bin",
@@ -981,16 +982,13 @@ int main(int argc, char *argv[])
                 0
         };
     
-        term_frame_redraw(ctx);
-
-        pid = term_process(ctx, exec_argv, env);
-
+        pid_t pid = term_process(ctx, exec_argv, env);
 
         /* handling one terminal process in main thread */
         handle_resizing(ctx);
         while (1) {
                 if (handle_output(ctx) < 0) {
-                        /* we are finished with child process */
+                        /* child process terminated */
                         break;
                 }
 
