@@ -53,6 +53,7 @@ typedef struct {
         int scroll_start;
         int scroll_stop;
         vtparse_t ansi_parser;
+        useconds_t put_delay;
 } term_ctx_t;
 
 
@@ -406,6 +407,9 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
 
 void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
 {
+        if (ctx->put_delay) {
+                usleep(ctx->put_delay);
+        }
         wattron(ctx->w, COLOR_PAIR(2));
         if (ctx->charset == 0) {
                 if (ctx->G0 == '0') {
@@ -827,7 +831,14 @@ int handle_output(term_ctx_t *ctx)
                 return 0;
         }
 
-        rc = read(ctx->master, buffer, sizeof(buffer));
+        int read_size;
+
+        if (ctx->put_delay) {
+                read_size = 1;
+        } else {
+                read_size = sizeof(buffer);
+        }
+        rc = read(ctx->master, buffer, read_size);
         if (rc > 0) {
                 /* handle by ANSI Escape Sequence State Machine */
                 vtparse(&ctx->ansi_parser, (unsigned char *)buffer, rc);
@@ -1154,6 +1165,16 @@ termlist_entry_t *terminal_manager_prev(termlist_entry_t *active)
 }
 
 
+void terminal_switch_speed(termlist_entry_t *e)
+{
+        if (e->term_ctx->put_delay) {
+                e->term_ctx->put_delay = 0;
+        } else {
+                e->term_ctx->put_delay = 10000;
+        }
+}
+
+
 int main(int argc, char *argv[])
 {
         /* Initialice locale and ncurses */
@@ -1212,6 +1233,9 @@ int main(int argc, char *argv[])
                                         break;
                                 case 'p':
                                         active = terminal_manager_prev(active);
+                                        break;
+                                case 's':
+                                        terminal_switch_speed(active);
                                         break;
                                 }
                                 cmd_mode = false;
