@@ -14,6 +14,7 @@
 #include <curses.h>
 #include "vtparse.h"
 
+#define UNUSED(x) { (void)x; }
 
 typedef enum {
         CURSOR_NORMAL = 0,
@@ -136,8 +137,8 @@ void term_config(void)
 
         start_color();
         init_pair(1, COLOR_WHITE, COLOR_BLACK);
-        init_pair(2, COLOR_GREEN, COLOR_BLACK); 
-        init_pair(3, COLOR_RED, COLOR_BLACK); 
+        init_pair(2, COLOR_GREEN, COLOR_BLACK);
+        init_pair(3, COLOR_RED, COLOR_BLACK);
 
         nodelay(stdscr, true);
 }
@@ -148,7 +149,7 @@ void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
         int x, y;
         if (parser->num_params == 0) {
                 wclrtoeol(ctx->w);
-                touchwin(ctx->pw); 
+                touchwin(ctx->pw);
                 wrefresh(ctx->w);
                 term_frame_redraw(ctx);
                 return;
@@ -157,14 +158,14 @@ void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
                 switch(parser->params[0]) {
                 case 0:
                         wclrtoeol(ctx->w);
-                        touchwin(ctx->pw); 
+                        touchwin(ctx->pw);
                         term_frame_redraw(ctx);
                         return;
                 case 1:
                         getyx(ctx->w, y, x);
                         wmove(ctx->w, y, 0);
                         for (int i = 0; i < x-1; i++) {
-                                waddch(ctx->w, ' '); 
+                                waddch(ctx->w, ' ');
                         }
                         touchwin(ctx->pw);
                         wrefresh(ctx->w);
@@ -322,7 +323,8 @@ void vt100_line_down(term_ctx_t *ctx)
         touchwin(ctx->pw);
         wrefresh(ctx->w);
 
-        int maxx [[ maybe_unused ]], maxy, y, x;
+        int maxx; UNUSED(maxx);
+        int maxy, y, x;
 
         getmaxyx(ctx->w, maxy, maxx);
         getyx(ctx->w, y, x);
@@ -416,7 +418,9 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
                 return;
         }
 
-        int x, y [[ maybe_unused ]];
+        int x, y;
+        UNUSED(y);
+
         getyx(ctx->w, y, x);
         if (parser->num_params == 1) {
                 if (parser->params[0] <= ctx->dh &&
@@ -470,8 +474,8 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
         }
         touchwin(ctx->pw);
         wrefresh(ctx->w);
-       
-        int cx, cy [[ maybe_unused ]];
+
+        int cx, cy; UNUSED(cy);
         getyx(ctx->w, cy, cx);
         if (cx == 0) {
                 term_frame_redraw(ctx);
@@ -482,11 +486,11 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
 
 void cur_newline(term_ctx_t *ctx)
 {
-        int  y, _ [[ maybe_unused ]];
+        int  y, _; UNUSED(_);
 
         vt100_line_down(ctx);
         getyx(ctx->w, y, _);
-        term_frame_redraw(ctx); 
+        term_frame_redraw(ctx);
         touchwin(ctx->pw);
         wrefresh(ctx->w);
         wmove(ctx->w, y, 0);
@@ -612,7 +616,7 @@ void vt100_set_scroll_region(term_ctx_t *ctx, vtparse_t *parser)
 
 void vt100_cursor_col_zero(term_ctx_t *ctx)
 {
-        int y, _ [[ maybe_unused ]];
+        int y, _; UNUSED(_);;
 
         getyx(ctx->w, y, _);
         // touchwin(ctx->pw);
@@ -819,20 +823,20 @@ void handle_input(term_ctx_t *ctx, int in)
         case KEY_RESIZE:
                 handle_resizing(ctx);
                 break;
-        case KEY_UP:  
-                sprintf(keybuff, key_up_seq[ctx->cursor_mode]);
+        case KEY_UP:
+                sprintf(keybuff, "%s", key_up_seq[ctx->cursor_mode]);
                 write(ctx->master, keybuff, 3);
                 break;
         case KEY_DOWN:
-                sprintf(keybuff, key_down_seq[ctx->cursor_mode]);
+                sprintf(keybuff, "%s", key_down_seq[ctx->cursor_mode]);
                 write(ctx->master, keybuff, 3);
                 break;
         case KEY_RIGHT:
-                sprintf(keybuff, key_right_seq[ctx->cursor_mode]);
+                sprintf(keybuff, "%s", key_right_seq[ctx->cursor_mode]);
                 write(ctx->master, keybuff, 3);
                 break;
         case KEY_LEFT:
-                sprintf(keybuff, key_left_seq[ctx->cursor_mode]);
+                sprintf(keybuff, "%s", key_left_seq[ctx->cursor_mode]);
                 write(ctx->master, keybuff, 3);
                 break;
         case KEY_BACKSPACE:
@@ -842,15 +846,15 @@ void handle_input(term_ctx_t *ctx, int in)
         default:
                 if (in >= 1 && in <= 126) {
                         write(ctx->master, &in, 1);
-                        break; 
+                        break;
                 }
                 if (in >= 256 && in < 256*256 - 1) {
                         write(ctx->master, &in, 2);
-                        break; 
+                        break;
                 }
                 if (in > 256*256 && in < 256*256*256 - 1) {
                         write(ctx->master, &in, 3);
-                        break; 
+                        break;
                 }
                 break;
         }
@@ -862,7 +866,7 @@ int handle_output(term_ctx_t *ctx)
         int rc;
         char buffer[128];
         struct timeval timeout;
-        
+
         touchwin(ctx->pw);
         wrefresh(ctx->w);
         refresh();
@@ -873,7 +877,7 @@ int handle_output(term_ctx_t *ctx)
         fd_set fds;
         FD_ZERO(&fds);
         FD_SET(ctx->master, &fds);
-        
+
         /* look if something is there on child's stdout */
         rc = select(ctx->master + 1, &fds, NULL, NULL, &timeout);
         if (rc <= 0) {
@@ -893,7 +897,6 @@ int handle_output(term_ctx_t *ctx)
 }
 
 
-
 term_ctx_t *new_term(int x, int y, int cols, int rows)
 {
         term_ctx_t *t = malloc(sizeof(term_ctx_t));
@@ -901,7 +904,7 @@ term_ctx_t *new_term(int x, int y, int cols, int rows)
                 return NULL;
         }
 
-        t->log = fopen("log.txt", "w+"); 
+        t->log = fopen("log.txt", "w+");
 
         t->cursor_mode = CURSOR_NORMAL;
         t->keypad_mode = KEYPAD_NORMAL;
@@ -981,7 +984,7 @@ int main(int argc, char *argv[])
                 "USER=andreas",
                 0
         };
-    
+
         pid_t pid = term_process(ctx, exec_argv, env);
 
         /* handling one terminal process in main thread */
