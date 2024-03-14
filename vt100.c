@@ -123,6 +123,16 @@ static void handle_resizing()
         cbreak();
         noecho();
         scrollok(stdscr, true);
+
+        wattron(stdscr, COLOR_PAIR(5));
+        move(0, 0);
+        int ymax, wmax;
+        getmaxyx(stdscr, ymax, wmax);
+        for (int i = 0; i < wmax; i++) {
+                waddch(stdscr, ' ');
+        }
+        mvwaddstr(stdscr, 0, 0, " Termoplex, v0.1 - (C) 2024 Andreas J. Reichel ");
+        wattroff(stdscr, COLOR_PAIR(5));
 }
 
 
@@ -147,7 +157,8 @@ void term_config(void)
         init_pair(1, COLOR_WHITE, COLOR_BLACK);
         init_pair(2, COLOR_GREEN, COLOR_BLACK);
         init_pair(3, COLOR_RED, COLOR_BLACK);
-
+        init_pair(4, COLOR_CYAN, COLOR_BLACK);
+        init_pair(5, COLOR_WHITE, COLOR_BLUE);
         nodelay(stdscr, true);
 
         if (can_change_color()) {
@@ -1286,8 +1297,8 @@ int main(int argc, char *argv[])
                         if (cmd_mode) {
                                 switch (in) {
                                 case 'w':
-                                        xi += 2;
-                                        yi += 1;
+                                        // xi += 2;
+                                        // yi += 1;
                                         active = new_command_win(xi, yi);
                                         break;
                                 case 'n':
