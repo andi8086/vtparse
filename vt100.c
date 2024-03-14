@@ -73,6 +73,8 @@ const char *DEC_special_as_utf8[48] = {
 
 // const wchar_t *wtest = L"❤️";
 
+short old_yellow_red, old_yellow_green, old_yellow_blue;
+bool yellow_changed = false;
 
 void term_frame_redraw(term_ctx_t *ctx)
 {
@@ -85,6 +87,11 @@ void term_frame_redraw(term_ctx_t *ctx)
 
 void term_restore(void)
 {
+        reset_color_pairs(); 
+        if (yellow_changed) {
+                init_color(COLOR_YELLOW, old_yellow_red, old_yellow_green,
+                           old_yellow_blue);
+        }
         endwin();
 }
 
@@ -142,6 +149,15 @@ void term_config(void)
         init_pair(3, COLOR_RED, COLOR_BLACK);
 
         nodelay(stdscr, true);
+
+        if (can_change_color()) {
+                /* Amber Monitor */
+                color_content(COLOR_YELLOW, &old_yellow_red,
+                              &old_yellow_green, &old_yellow_blue);
+                yellow_changed = true;
+                init_color(COLOR_YELLOW, 1000, 500, 0);
+                init_pair(2, COLOR_YELLOW, COLOR_BLACK);
+        }
 }
 
 
@@ -1202,6 +1218,24 @@ void store_win(WINDOW *w)
 }
 
 
+int color_cycle = 0;
+
+void terminal_color_cycle(void)
+{
+        color_cycle++;
+        if (color_cycle > 3) {
+                color_cycle = 0;
+        }
+        switch (color_cycle) {
+        case 0: init_pair(2, COLOR_GREEN, COLOR_BLACK); break;
+        case 1: init_pair(2, COLOR_YELLOW, COLOR_BLACK); break;
+        case 2: init_pair(2, COLOR_WHITE, COLOR_BLACK); break;
+        default:
+                break;
+        }
+}
+
+
 int main(int argc, char *argv[])
 {
         /* Initialice locale and ncurses */
@@ -1269,6 +1303,9 @@ int main(int argc, char *argv[])
                                         // scr_dump("dump.out");
                                         store_win(active->term_ctx->w);
                                         break;
+                                case 'c':
+                                        // cycle colors
+                                        terminal_color_cycle();
                                 }
                                 cmd_mode = false;
                                 continue;
