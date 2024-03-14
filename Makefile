@@ -5,14 +5,17 @@ PROG_OBJs = \
 
 CFLAGS += \
         -I./vtparse \
-        -O2 \
-        -Wall
+        -O0 \
+        -Wall \
+	-g
 
 LDFLAGS += \
         -L. \
         -L./vtparse \
         -lvtparse \
-        -lncursesw
+        -lncursesw \
+	-lpthread \
+	-g
 
 clean:
 	$(MAKE) -C vtparse clean

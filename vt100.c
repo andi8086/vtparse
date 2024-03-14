@@ -8,8 +8,10 @@
 #include <error.h>
 #include <termios.h>
 #include <sys/ioctl.h>
+#include <sys/queue.h>
 #include <pty.h>
 #include <locale.h>
+#include <pthread.h>
 
 #include <curses.h>
 #include "vtparse.h"
@@ -72,17 +74,7 @@ void term_frame_redraw(term_ctx_t *ctx)
 {
         int cx, cy;
         getyx(ctx->w, cy, cx);
-        wrefresh(ctx->pw);
-        wrefresh(ctx->w);
         box(ctx->pw, 0, 0);
-        char coords_msg[84];
-
-        snprintf(coords_msg, 83, "x = %d, y = %d, scroll_start = %d, scroll_stop = %d    ",
-                             cx + 1, cy + 1, ctx->scroll_start + 1, ctx->scroll_stop + 1);
-        mvwaddstr(stdscr, ctx->wy + ctx->wh + 2, 2, "The power of VT100 :-)");
-        mvwaddstr(stdscr, ctx->wy + ctx->wh + 3, 2, coords_msg);
-        refresh();
-        doupdate();
         wmove(ctx->w, cy, cx);
 }
 
@@ -149,8 +141,6 @@ void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
         int x, y;
         if (parser->num_params == 0) {
                 wclrtoeol(ctx->w);
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 term_frame_redraw(ctx);
                 return;
         }
@@ -158,7 +148,6 @@ void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
                 switch(parser->params[0]) {
                 case 0:
                         wclrtoeol(ctx->w);
-                        touchwin(ctx->pw);
                         term_frame_redraw(ctx);
                         return;
                 case 1:
@@ -167,16 +156,12 @@ void cur_lclear(term_ctx_t *ctx, vtparse_t *parser)
                         for (int i = 0; i < x-1; i++) {
                                 waddch(ctx->w, ' ');
                         }
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, y, x);
                         return;
                 case 2:
                         getyx(ctx->w, y, x);
                         wmove(ctx->w, y, 0);
                         wclrtoeol(ctx->w);
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         term_frame_redraw(ctx);
                         wmove(ctx->w, y, x);
                         return;
@@ -252,8 +237,6 @@ void cur_up(term_ctx_t *ctx, vtparse_t *parser)
                 if (y > 0) {
                         y--;
                         wmove(ctx->w, y, x);
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                 }
 
         } else {
@@ -263,8 +246,6 @@ void cur_up(term_ctx_t *ctx, vtparse_t *parser)
                 if (y - parser->params[0] >= 0) {
                         y -= parser->params[0];
                         wmove(ctx->w, y, x);
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                 }
         }
 }
@@ -278,8 +259,6 @@ void cur_down(term_ctx_t *ctx, vtparse_t *parser)
                 if (y < ctx->dh) {
                         y++;
                         wmove(ctx->w, y, x);
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                 }
         } else {
                 if (parser->params[0] == 0) {
@@ -288,8 +267,6 @@ void cur_down(term_ctx_t *ctx, vtparse_t *parser)
                 if (y + parser->params[0] <= ctx->dh) {
                         y += parser->params[0];
                         wmove(ctx->w, y, x);
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                 }
         }
 }
@@ -302,16 +279,12 @@ void vt100_line_up(term_ctx_t *ctx)
 
         if (y == ctx->scroll_start) {
                 wscrl(ctx->w, -1);
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 return;
         }
 
         /* we can move the cursor, but no scroll if
          * outside the scrolling range */
         if (y > 0) {
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 wmove(ctx->w, y - 1, x);
                 return;
         }
@@ -320,9 +293,6 @@ void vt100_line_up(term_ctx_t *ctx)
 
 void vt100_line_down(term_ctx_t *ctx)
 {
-        touchwin(ctx->pw);
-        wrefresh(ctx->w);
-
         int maxx; UNUSED(maxx);
         int maxy, y, x;
 
@@ -331,16 +301,12 @@ void vt100_line_down(term_ctx_t *ctx)
 
         if (y == ctx->scroll_stop) {
                 wscrl(ctx->w, 1);
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 return;
         }
 
         /* we can move the cursor if outside of scroll region,
          * but we cannot scroll */
         if (y < maxy - 1) {
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 wmove(ctx->w, y + 1, x);
                 return;
         }
@@ -354,8 +320,6 @@ void cur_right(term_ctx_t *ctx, vtparse_t *parser)
         if (parser->num_params == 0) {
                 if (x < ctx->dw - 2) {
                         x++;
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, y, x);
                 }
         } else {
@@ -364,8 +328,6 @@ void cur_right(term_ctx_t *ctx, vtparse_t *parser)
                 }
                 if (x + parser->params[0] <= ctx->dw - 2) {
                         x += parser->params[0];
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, y, x);
                 }
         }
@@ -377,8 +339,6 @@ void cursor_back(term_ctx_t *ctx)
         int x, y;
         getyx(ctx->w, y, x);
         if (x > ctx->mx) {
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 wmove(ctx->w, y, x-1);
         }
 }
@@ -391,8 +351,6 @@ void cur_left(term_ctx_t *ctx, vtparse_t *parser)
         if (parser->num_params == 0) {
                 if (x > 0) {
                         x--;
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, y, x);
                 }
         } else {
@@ -401,8 +359,6 @@ void cur_left(term_ctx_t *ctx, vtparse_t *parser)
                 }
                 if (x - parser->params[0] >= 0) {
                         x -= parser->params[0];
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, y, x);
                 }
         }
@@ -412,8 +368,6 @@ void cur_left(term_ctx_t *ctx, vtparse_t *parser)
 void cur_home(term_ctx_t *ctx, vtparse_t *parser)
 {
         if (parser->num_params == 0) {
-                touchwin(ctx->pw);
-                wrefresh(ctx->w);
                 wmove(ctx->w, 0, 0);
                 return;
         }
@@ -425,8 +379,6 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
         if (parser->num_params == 1) {
                 if (parser->params[0] <= ctx->dh &&
                     parser->params[0] > 0) {
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, parser->params[0] - 1, x);
                 }
                 return;
@@ -437,8 +389,6 @@ void cur_home(term_ctx_t *ctx, vtparse_t *parser)
                     parser->params[0] > 0 &&
                     parser->params[1] <= ctx->dw &&
                     parser->params[1] > 0) {
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->w);
                         wmove(ctx->w, parser->params[0] - 1, parser->params[1] - 1);
                 }
                 return;
@@ -472,8 +422,6 @@ void term_put(term_ctx_t *ctx, vtparse_t *parser, unsigned int ch)
                         waddch(ctx->w, ch);
                 }
         }
-        touchwin(ctx->pw);
-        wrefresh(ctx->w);
 
         int cx, cy; UNUSED(cy);
         getyx(ctx->w, cy, cx);
@@ -490,11 +438,8 @@ void cur_newline(term_ctx_t *ctx)
 
         vt100_line_down(ctx);
         getyx(ctx->w, y, _);
-        term_frame_redraw(ctx);
-        touchwin(ctx->pw);
-        wrefresh(ctx->w);
         wmove(ctx->w, y, 0);
-
+        term_frame_redraw(ctx);
         return;
 }
 
@@ -619,8 +564,6 @@ void vt100_cursor_col_zero(term_ctx_t *ctx)
         int y, _; UNUSED(_);;
 
         getyx(ctx->w, y, _);
-        // touchwin(ctx->pw);
-        // wrefresh(ctx->w);
         wmove(ctx->w, y, 0);
 }
 
@@ -821,7 +764,7 @@ void handle_input(term_ctx_t *ctx, int in)
 
         switch (in) {
         case KEY_RESIZE:
-                handle_resizing(ctx);
+//                handle_resizing(ctx);
                 break;
         case KEY_UP:
                 sprintf(keybuff, "%s", key_up_seq[ctx->cursor_mode]);
@@ -866,11 +809,6 @@ int handle_output(term_ctx_t *ctx)
         int rc;
         char buffer[128];
         struct timeval timeout;
-
-        touchwin(ctx->pw);
-        wrefresh(ctx->w);
-        refresh();
-        doupdate();
 
         timeout.tv_sec = 0;
         timeout.tv_usec = 100;
@@ -932,9 +870,6 @@ term_ctx_t *new_term(int x, int y, int cols, int rows)
         box(t->pw, 0, 0);
         scrollok(t->w, true);
 
-        touchwin(t->pw);
-        wrefresh(t->w);
-
         return t;
 }
 
@@ -960,17 +895,168 @@ pid_t term_process(term_ctx_t *ctx, char **argv, char **env)
 }
 
 
+CIRCLEQ_HEAD(termlist, termlist_entry) termlist_head;
+
+// struct termlist *termlist_headp;
+
+typedef struct termlist_entry {
+        CIRCLEQ_ENTRY(termlist_entry) entries;
+        term_ctx_t *term_ctx;
+        char *term_name;
+        pid_t term_proc;
+        bool is_active;
+        uint64_t id;
+        char **argv;
+        char **env;
+        pthread_t manager_thread;
+} termlist_entry_t;
+
+
+uint64_t terminal_manager_create(char *name, int x, int y, int cols, int rows)
+{
+        termlist_entry_t *tle = malloc(sizeof(termlist_entry_t));
+        if (!tle) {
+                perror("out of memory!");
+                exit(-1);
+        }
+
+
+        /* make all current terminals inactive */
+        uint64_t max_id = 0;
+
+        termlist_entry_t *p;
+        for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
+             p = p->entries.cqe_next) {
+                p->is_active = false;
+                if (p->id > max_id) {
+                        max_id = p->id;
+                }
+        }
+
+        tle->id = max_id + 1;
+        tle->is_active = true;
+        tle->manager_thread = -1;
+        /* create a new virtual terminal window */
+        tle->term_ctx = new_term(1, 1, 80, 25);
+        if (!tle->term_ctx) {
+                perror("new_term");
+                return 0;
+        }
+
+
+        CIRCLEQ_INSERT_HEAD(&termlist_head, tle, entries);
+
+        return tle->id;
+}
+
+
+termlist_entry_t *terminal_manager_id_to_entry(uint64_t id)
+{
+        bool found = false;
+        termlist_entry_t *p;
+        for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
+             p = p->entries.cqe_next) {
+                if (p->id == id) {
+                        found = true;
+                        break;
+                }
+        }
+
+        if (!found) {
+                p = NULL;
+        }
+        return p;
+}
+
+
+void *terminal_manager_thread(void *i)
+{
+        uint64_t id = (uint64_t)i;
+
+        termlist_entry_t *e = terminal_manager_id_to_entry(id);
+
+        if (!e) {
+                /* something is wrong here */
+                return NULL;
+        }
+
+        term_ctx_t *ctx = e->term_ctx;
+        pid_t pid = term_process(ctx, e->argv, e->env);
+
+        (void)pid;
+        handle_resizing(e->term_ctx);
+        while (1) {
+                if (handle_output(ctx) < 0) {
+                        /* child process terminated */
+                        break;
+                }
+
+                if (e->is_active) {
+                        touchwin(ctx->pw);
+                        wrefresh(ctx->pw);
+                        wrefresh(ctx->w);
+                        refresh();
+                        doupdate();
+                }
+
+                int in = getch();
+                if (in != ERR) {
+                        handle_input(ctx, in);
+                }
+        }
+
+        if (waitpid(e->term_proc, NULL, 0) == -1) {
+                perror("PARENT: waitpid");
+                exit(-1);
+        }
+
+        return NULL;
+}
+
+
+pthread_t terminal_manager_run(uint64_t term_id, char **argv, char **env)
+{
+        termlist_entry_t *e = terminal_manager_id_to_entry(term_id);
+        if (!e) {
+                perror("Invalid terminal id");
+                exit(-1);
+        }
+
+        e->argv = argv;
+        e->env = env;
+
+        pthread_create(&e->manager_thread, NULL,
+                       terminal_manager_thread, (void *)term_id);
+
+        return e->manager_thread;
+}
+
+
+void terminal_manager_join_threads(void)
+{
+        termlist_entry_t *p;
+        for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
+             p = p->entries.cqe_next) {
+                if (p->manager_thread != -1) {
+                        pthread_join(p->manager_thread, NULL);
+                }
+        }
+}
+
+
 int main(int argc, char *argv[])
 {
         /* Initialice locale and ncurses */
         setlocale(LC_ALL, "en_US.UTF-8");
         term_config();
 
-        /* create a new virtual terminal window */
-        term_ctx_t *ctx = new_term(1, 1, 80, 25);
-        if (!ctx) {
-                perror("new_term");
-                return -1;
+        CIRCLEQ_INIT(&termlist_head);
+
+        uint64_t id = terminal_manager_create("Terminal", 1, 1, 80, 25);
+        if (id == 0) {
+                /* error, could not create terminal */
+                perror("Out of memory");
+                exit(-1);
         }
 
         /* execute process in virtual terminal with given
@@ -985,25 +1071,9 @@ int main(int argc, char *argv[])
                 0
         };
 
-        pid_t pid = term_process(ctx, exec_argv, env);
+        terminal_manager_run(id, exec_argv, env);
 
-        /* handling one terminal process in main thread */
-        handle_resizing(ctx);
-        while (1) {
-                if (handle_output(ctx) < 0) {
-                        /* child process terminated */
-                        break;
-                }
+        terminal_manager_join_threads();
 
-                int in = getch();
-                if (in != ERR) {
-                        handle_input(ctx, in);
-                }
-        }
-
-        if (waitpid(pid, NULL, 0) == -1) {
-                perror("PARENT: waitpid");
-                return EXIT_FAILURE;
-        }
         return EXIT_SUCCESS;
 }
