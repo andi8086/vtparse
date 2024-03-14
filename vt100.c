@@ -149,7 +149,7 @@ void term_config(void)
         cbreak();
         noecho();
         move(0, 0);
-        curs_set(1);
+        curs_set(0);
         scrollok(stdscr, true);
         refresh();
 
@@ -840,6 +840,21 @@ void handle_input(term_ctx_t *ctx, int in)
 }
 
 
+void show_cursor_emu(term_ctx_t *ctx)
+{
+       // int y, x;
+       // getyx(ctx->w, y, x);
+       // chtype c = mvwinch(ctx->w, y, x);
+       wchgat(ctx->w, 1, A_REVERSE, 2, NULL);
+}
+
+
+void hide_cursor_emu(term_ctx_t *ctx)
+{
+       wchgat(ctx->w, 1, A_NORMAL, 2, NULL);
+}
+
+
 int handle_output(term_ctx_t *ctx)
 {
         int rc;
@@ -858,6 +873,9 @@ int handle_output(term_ctx_t *ctx)
                 return 0;
         }
 
+        /* we have output, first disable cursor */
+        hide_cursor_emu(ctx);
+
         int read_size;
 
         if (ctx->put_delay) {
@@ -869,6 +887,8 @@ int handle_output(term_ctx_t *ctx)
         if (rc > 0) {
                 /* handle by ANSI Escape Sequence State Machine */
                 vtparse(&ctx->ansi_parser, (unsigned char *)buffer, rc);
+
+                show_cursor_emu(ctx);
                 return 0;
         }
 
