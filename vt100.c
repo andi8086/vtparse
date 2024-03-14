@@ -919,6 +919,7 @@ typedef struct termlist_entry {
         char **argv;
         char **env;
         pthread_t manager_thread;
+        bool kill_me;
 } termlist_entry_t;
 
 
@@ -954,6 +955,7 @@ uint64_t terminal_manager_create(char *name, int x, int y, int cols, int rows)
                 perror("new_term");
                 return 0;
         }
+        tle->kill_me = false;
 
         CIRCLEQ_INSERT_HEAD(&termlist_head, tle, entries);
 
@@ -997,16 +999,17 @@ void *terminal_manager_thread(void *i)
 
         (void)pid;
         handle_resizing(e->term_ctx);
-        while (1) {
+
+        while (!e->kill_me) {
                 /* keep main process of thread idle */
-                sleep(1);
         }
 
-        if (waitpid(e->term_proc, NULL, 0) == -1) {
+/*        if (waitpid(e->term_proc, NULL, 0) == -1) {
                 perror("PARENT: waitpid");
                 exit(-1);
-        }
+        } */
 
+        printf("Thread exited");
         return NULL;
 }
 
@@ -1054,7 +1057,7 @@ void terminal_manager_join_threads(void)
 }
 
 
-void terminal_manager_update_views(void)
+int terminal_manager_update_views(void)
 {
         term_ctx_t *active_ctx = NULL;
 
@@ -1065,7 +1068,9 @@ void terminal_manager_update_views(void)
                         active_ctx = p->term_ctx;
                 }
                 if (handle_output(p->term_ctx) < 0) {
-                        /* child process terminated */
+                        /* child exited, remove this window from the list,
+                         * and signal thread to exit */
+                        return 1;
                         // break;
                 }
         }
@@ -1075,6 +1080,17 @@ void terminal_manager_update_views(void)
         }
         update_panels();
         doupdate();
+        return 0;
+}
+
+
+void terminal_manager_terminate(termlist_entry_t *e)
+{
+        del_panel(e->term_ctx->panel);
+        delwin(e->term_ctx->w);
+        delwin(e->term_ctx->pw);
+        CIRCLEQ_REMOVE(&termlist_head, e, entries);
+        e->kill_me = true;
 }
 
 
@@ -1091,10 +1107,10 @@ char *env[] = {
 };
 
 
-termlist_entry_t *new_command_win(void)
+termlist_entry_t *new_command_win(int x, int y)
 {
         uint64_t id = terminal_manager_create(
-                        "Terminal", 15, 3, 80, 25);
+                        "Terminal", x, y, 80, 25);
         if (id == 0) {
                 /* error, could not create terminal */
                 perror("Out of memory");
@@ -1146,8 +1162,21 @@ int main(int argc, char *argv[])
 
         doupdate();
         bool cmd_mode = false;
+        int xi = 2, yi = 2;
         while (true) {
-                terminal_manager_update_views();
+                int res = terminal_manager_update_views();
+                if (res) {
+                        /* some child has terminated */
+                        termlist_entry_t *active_old;
+                        active_old = active;
+                        active = terminal_manager_next(active);
+                        if (active_old == active) {
+                                /* we are finished */
+                                break;
+                        }
+                        /* remove window, panel and kill pid */
+                        terminal_manager_terminate(active_old);
+                }
                 int in = getch();
                 if (in != ERR) {
                         if (in == KEY_RESIZE) {
@@ -1157,7 +1186,9 @@ int main(int argc, char *argv[])
                         if (cmd_mode) {
                                 switch (in) {
                                 case 'w':
-                                        active = new_command_win();
+                                        xi += 2;
+                                        yi += 2;
+                                        active = new_command_win(xi, yi);
                                         break;
                                 case 'n':
                                         active = terminal_manager_next(active);
