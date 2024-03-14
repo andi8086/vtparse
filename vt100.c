@@ -1179,7 +1179,7 @@ int main(int argc, char *argv[])
 
         doupdate();
         bool cmd_mode = false;
-        int xi = 2, yi = 2;
+        int xi = 1, yi = 1;
         while (true) {
                 int res = terminal_manager_update_views();
                 if (res) {
@@ -1204,7 +1204,7 @@ int main(int argc, char *argv[])
                                 switch (in) {
                                 case 'w':
                                         xi += 2;
-                                        yi += 2;
+                                        yi += 1;
                                         active = new_command_win(xi, yi);
                                         break;
                                 case 'n':
