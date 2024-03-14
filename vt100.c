@@ -1012,7 +1012,6 @@ void *terminal_manager_thread(void *i)
                 exit(-1);
         } */
 
-        printf("Thread exited");
         return NULL;
 }
 
@@ -1079,7 +1078,7 @@ int terminal_manager_update_views(void)
         }
 
         if (active_ctx) {
-                term_frame_redraw(active_ctx);
+                wrefresh(active_ctx->w);
         }
         update_panels();
         doupdate();
@@ -1140,6 +1139,21 @@ termlist_entry_t *terminal_manager_next(termlist_entry_t *active)
 }
 
 
+termlist_entry_t *terminal_manager_prev(termlist_entry_t *active)
+{
+        termlist_entry_t *prev = active->entries.cqe_prev;
+        if (!prev->term_ctx) {
+                /* the root element of the circular list is unused */
+                /* jump to the next */
+                prev = prev->entries.cqe_prev;
+        }
+        active->is_active = false;
+        prev->is_active = true;
+        top_panel(prev->term_ctx->panel);
+        return prev;
+}
+
+
 int main(int argc, char *argv[])
 {
         /* Initialice locale and ncurses */
@@ -1173,12 +1187,12 @@ int main(int argc, char *argv[])
                         termlist_entry_t *active_old;
                         active_old = active;
                         active = terminal_manager_next(active);
+                        /* remove window, panel and kill pid */
+                        terminal_manager_terminate(active_old);
                         if (active_old == active) {
                                 /* we are finished */
                                 break;
                         }
-                        /* remove window, panel and kill pid */
-                        terminal_manager_terminate(active_old);
                 }
                 int in = getch();
                 if (in != ERR) {
@@ -1195,6 +1209,9 @@ int main(int argc, char *argv[])
                                         break;
                                 case 'n':
                                         active = terminal_manager_next(active);
+                                        break;
+                                case 'p':
+                                        active = terminal_manager_prev(active);
                                         break;
                                 }
                                 cmd_mode = false;
