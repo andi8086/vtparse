@@ -14,6 +14,8 @@
 #include <pthread.h>
 
 #include <curses.h>
+#include <panel.h>
+
 #include "vtparse.h"
 
 #define UNUSED(x) { (void)x; }
@@ -38,6 +40,7 @@ typedef struct {
         int charset;    /* 0 or 1 */
         WINDOW *pw;     /* pwin */
         WINDOW *w;      /* derwin */
+        PANEL *panel;
         int wx;
         int wy;
         int ww;
@@ -85,10 +88,8 @@ void term_restore(void)
 }
 
 
-static void handle_resizing(term_ctx_t *ctx)
+static void term_set_size(term_ctx_t *ctx)
 {
-        endwin();
-
         struct winsize {
                 unsigned short ws_row;
                 unsigned short ws_col;
@@ -100,13 +101,20 @@ static void handle_resizing(term_ctx_t *ctx)
         w.ws_row = ctx->dh;
         w.ws_col = ctx->dw;
 
+        ioctl(ctx->master, TIOCSWINSZ, &w);
+        term_frame_redraw(ctx);
+}
+
+
+static void handle_resizing()
+{
+        endwin();
+
         initscr();
         keypad(stdscr, true);
         cbreak();
         noecho();
         scrollok(stdscr, true);
-        ioctl(ctx->master, TIOCSWINSZ, &w);
-        term_frame_redraw(ctx);
 }
 
 
@@ -581,13 +589,13 @@ void vt100_next_tab(term_ctx_t *ctx)
 
 void vt100_bell(term_ctx_t *ctx)
 {
-        wattron(ctx->pw, COLOR_PAIR(3));
+/*        wattron(ctx->pw, COLOR_PAIR(3));
         box(ctx->pw, 0, 0);
         wrefresh(ctx->pw);
         usleep(250000);
         wattroff(ctx->pw, COLOR_PAIR(3));
         box(ctx->pw, 0, 0);
-        wrefresh(ctx->pw);
+        wrefresh(ctx->pw); */
 }
 
 
@@ -763,9 +771,6 @@ void handle_input(term_ctx_t *ctx, int in)
         char keybuff[4];
 
         switch (in) {
-        case KEY_RESIZE:
-//                handle_resizing(ctx);
-                break;
         case KEY_UP:
                 sprintf(keybuff, "%s", key_up_seq[ctx->cursor_mode]);
                 write(ctx->master, keybuff, 3);
@@ -852,14 +857,16 @@ term_ctx_t *new_term(int x, int y, int cols, int rows)
 
         t->ww = cols + 2;
         t->wh = rows + 2;
-        t->pw = newwin(t->wh, t->ww, x, y);
+        t->pw = newwin(t->wh, t->ww, y, x);
+        t->panel = new_panel(t->pw);
+
         t->dh = t->wh - 2;
         t->dw = t->ww - 2;
         t->wx = x;
         t->wy = y;
         t->mx = 1;
         t->my = 1;
-        t->w = derwin(t->pw, t->dh, t->dw+1, t->mx, t->my);
+        t->w = derwin(t->pw, t->dh, t->dw+1, t->my, t->mx);
         t->scroll_start = 0;
         t->scroll_stop = t->dh - 1;
 
@@ -891,6 +898,9 @@ pid_t term_process(term_ctx_t *ctx, char **argv, char **env)
                 return EXIT_FAILURE;
         }
 
+        /* adjust pseudo terminal size */
+        term_set_size(ctx);
+
         return pid;
 }
 
@@ -914,12 +924,14 @@ typedef struct termlist_entry {
 
 uint64_t terminal_manager_create(char *name, int x, int y, int cols, int rows)
 {
-        termlist_entry_t *tle = malloc(sizeof(termlist_entry_t));
+
+        termlist_entry_t *tle;
+
+        tle = malloc(sizeof(termlist_entry_t));
         if (!tle) {
                 perror("out of memory!");
                 exit(-1);
         }
-
 
         /* make all current terminals inactive */
         uint64_t max_id = 0;
@@ -937,12 +949,11 @@ uint64_t terminal_manager_create(char *name, int x, int y, int cols, int rows)
         tle->is_active = true;
         tle->manager_thread = -1;
         /* create a new virtual terminal window */
-        tle->term_ctx = new_term(1, 1, 80, 25);
+        tle->term_ctx = new_term(x, y, cols, rows);
         if (!tle->term_ctx) {
                 perror("new_term");
                 return 0;
         }
-
 
         CIRCLEQ_INSERT_HEAD(&termlist_head, tle, entries);
 
@@ -954,6 +965,7 @@ termlist_entry_t *terminal_manager_id_to_entry(uint64_t id)
 {
         bool found = false;
         termlist_entry_t *p;
+
         for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
              p = p->entries.cqe_next) {
                 if (p->id == id) {
@@ -986,23 +998,8 @@ void *terminal_manager_thread(void *i)
         (void)pid;
         handle_resizing(e->term_ctx);
         while (1) {
-                if (handle_output(ctx) < 0) {
-                        /* child process terminated */
-                        break;
-                }
-
-                if (e->is_active) {
-                        touchwin(ctx->pw);
-                        wrefresh(ctx->pw);
-                        wrefresh(ctx->w);
-                        refresh();
-                        doupdate();
-                }
-
-                int in = getch();
-                if (in != ERR) {
-                        handle_input(ctx, in);
-                }
+                /* keep main process of thread idle */
+                sleep(1);
         }
 
         if (waitpid(e->term_proc, NULL, 0) == -1) {
@@ -1032,6 +1029,19 @@ pthread_t terminal_manager_run(uint64_t term_id, char **argv, char **env)
 }
 
 
+uint64_t terminal_manager_get_active(void)
+{
+        termlist_entry_t *p;
+        for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
+             p = p->entries.cqe_next) {
+                if (p->is_active) {
+                        return p->id;
+                }
+        }
+        return 0;
+}
+
+
 void terminal_manager_join_threads(void)
 {
         termlist_entry_t *p;
@@ -1041,6 +1051,73 @@ void terminal_manager_join_threads(void)
                         pthread_join(p->manager_thread, NULL);
                 }
         }
+}
+
+
+void terminal_manager_update_views(void)
+{
+        term_ctx_t *active_ctx = NULL;
+
+        termlist_entry_t *p;
+        for (p = termlist_head.cqh_first; p != (void *)&termlist_head;
+             p = p->entries.cqe_next) {
+                if (p->is_active) {
+                        active_ctx = p->term_ctx;
+                }
+                if (handle_output(p->term_ctx) < 0) {
+                        /* child process terminated */
+                        // break;
+                }
+        }
+
+        if (active_ctx) {
+                term_frame_redraw(active_ctx);
+        }
+        update_panels();
+        doupdate();
+}
+
+
+/* execute process in virtual terminal with given
+   environment */
+char *exec_argv[] = {"/bin/bash", NULL};
+char *env[] = {
+        "PATH=/usr/bin:/bin",
+        "HOME=/home/andreas",
+        "TERM=vt100",
+        "LC_ALL=C",
+        "USER=andreas",
+        0
+};
+
+
+int new_command_win(void)
+{
+        uint64_t id = terminal_manager_create(
+                        "Terminal", 15, 3, 80, 25);
+        if (id == 0) {
+                /* error, could not create terminal */
+                perror("Out of memory");
+                exit(-1);
+        }
+        terminal_manager_run(id, exec_argv, env);
+
+        return 0;
+}
+
+
+termlist_entry_t *terminal_manager_next(termlist_entry_t *active)
+{
+        termlist_entry_t *next = active->entries.cqe_next;
+        if (!next->term_ctx) {
+                /* the root element of the circular list is unused */
+                /* jump to the next */
+                next = next->entries.cqe_next;
+        }
+        next->is_active = true;
+        active->is_active = false;
+        top_panel(next->term_ctx->panel);
+        return next;
 }
 
 
@@ -1058,20 +1135,47 @@ int main(int argc, char *argv[])
                 perror("Out of memory");
                 exit(-1);
         }
-
-        /* execute process in virtual terminal with given
-           environment */
-        char *exec_argv[] = {"/bin/bash", NULL};
-        char *env[] = {
-                "PATH=/usr/bin:/bin",
-                "HOME=/home/andreas",
-                "TERM=vt100",
-                "LC_ALL=C",
-                "USER=andreas",
-                0
-        };
-
         terminal_manager_run(id, exec_argv, env);
+
+        /* here in the main thread and process, we
+         * only fetch stdin via ncurses and check if we
+         * have someting to manage */
+
+        termlist_entry_t *active = terminal_manager_id_to_entry(id);
+        handle_resizing();
+
+        doupdate();
+        bool cmd_mode = false;
+        while (true) {
+                terminal_manager_update_views();
+                int in = getch();
+                if (in != ERR) {
+                        if (in == KEY_RESIZE) {
+                                handle_resizing();
+                                continue;
+                        }
+                        if (cmd_mode) {
+                                switch (in) {
+                                case 'w':
+                                        new_command_win();
+                                        active = terminal_manager_id_to_entry(
+                                                        terminal_manager_get_active());
+                                        break;
+                                case 'n':
+                                        active = terminal_manager_next(active);
+                                        break;
+                                }
+                                cmd_mode = false;
+                                continue;
+                        }
+
+                        if (in == ('w' & 0x1F)) {
+                                cmd_mode = true;
+                                continue;
+                        }
+                        handle_input(active->term_ctx, in);
+                }
+        }
 
         terminal_manager_join_threads();
 

@@ -14,6 +14,7 @@ LDFLAGS += \
         -L./vtparse \
         -lvtparse \
         -lncursesw \
+	-lpanel \
 	-lpthread \
 	-g
 
