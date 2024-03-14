@@ -1175,6 +1175,18 @@ void terminal_switch_speed(termlist_entry_t *e)
 }
 
 
+void store_win(WINDOW *w)
+{
+        FILE *f = fopen("window.out", "w+");
+        if (!f) {
+                return;
+        }
+        putwin(w, f);
+        fclose(f);
+
+}
+
+
 int main(int argc, char *argv[])
 {
         /* Initialice locale and ncurses */
@@ -1236,6 +1248,10 @@ int main(int argc, char *argv[])
                                         break;
                                 case 's':
                                         terminal_switch_speed(active);
+                                        break;
+                                case 'd':
+                                        // scr_dump("dump.out");
+                                        store_win(active->term_ctx->w);
                                         break;
                                 }
                                 cmd_mode = false;
