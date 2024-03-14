@@ -857,6 +857,7 @@ term_ctx_t *new_term(int x, int y, int cols, int rows)
         if (!t) {
                 return NULL;
         }
+        memset(t, 0, sizeof(term_ctx_t));
 
         t->log = fopen("log.txt", "w+");
 
@@ -921,6 +922,7 @@ CIRCLEQ_HEAD(termlist, termlist_entry) termlist_head;
 // struct termlist *termlist_headp;
 
 typedef struct termlist_entry {
+        pthread_barrier_t thread_sync;
         CIRCLEQ_ENTRY(termlist_entry) entries;
         term_ctx_t *term_ctx;
         char *term_name;
@@ -961,6 +963,9 @@ uint64_t terminal_manager_create(char *name, int x, int y, int cols, int rows)
         tle->is_active = true;
         tle->manager_thread = -1;
         /* create a new virtual terminal window */
+
+        pthread_barrier_init(&tle->thread_sync, NULL, 2);
+
         tle->term_ctx = new_term(x, y, cols, rows);
         if (!tle->term_ctx) {
                 perror("new_term");
@@ -1011,6 +1016,8 @@ void *terminal_manager_thread(void *i)
         (void)pid;
         handle_resizing(e->term_ctx);
 
+        pthread_barrier_wait(&e->thread_sync);
+
         while (!e->kill_me) {
                 /* keep main process of thread idle */
         }
@@ -1040,6 +1047,10 @@ pthread_t terminal_manager_run(uint64_t term_id, char **argv, char **env)
 
         pthread_create(&e->manager_thread, NULL,
                        terminal_manager_thread, (void *)term_id);
+
+        pthread_barrier_wait(&e->thread_sync);
+
+        pthread_barrier_destroy(&e->thread_sync);
 
         return e->manager_thread;
 }
