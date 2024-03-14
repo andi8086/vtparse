@@ -1091,7 +1091,7 @@ char *env[] = {
 };
 
 
-int new_command_win(void)
+termlist_entry_t *new_command_win(void)
 {
         uint64_t id = terminal_manager_create(
                         "Terminal", 15, 3, 80, 25);
@@ -1102,7 +1102,7 @@ int new_command_win(void)
         }
         terminal_manager_run(id, exec_argv, env);
 
-        return 0;
+        return terminal_manager_id_to_entry(id);
 }
 
 
@@ -1114,8 +1114,8 @@ termlist_entry_t *terminal_manager_next(termlist_entry_t *active)
                 /* jump to the next */
                 next = next->entries.cqe_next;
         }
-        next->is_active = true;
         active->is_active = false;
+        next->is_active = true;
         top_panel(next->term_ctx->panel);
         return next;
 }
@@ -1157,9 +1157,7 @@ int main(int argc, char *argv[])
                         if (cmd_mode) {
                                 switch (in) {
                                 case 'w':
-                                        new_command_win();
-                                        active = terminal_manager_id_to_entry(
-                                                        terminal_manager_get_active());
+                                        active = new_command_win();
                                         break;
                                 case 'n':
                                         active = terminal_manager_next(active);
