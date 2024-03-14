@@ -1004,6 +1004,9 @@ void *terminal_manager_thread(void *i)
                 /* keep main process of thread idle */
         }
 
+        free(e->term_ctx);
+        free(e);
+
 /*        if (waitpid(e->term_proc, NULL, 0) == -1) {
                 perror("PARENT: waitpid");
                 exit(-1);
