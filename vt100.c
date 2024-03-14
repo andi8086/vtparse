@@ -1149,10 +1149,12 @@ termlist_entry_t *new_command_win(int x, int y)
 termlist_entry_t *terminal_manager_next(termlist_entry_t *active)
 {
         termlist_entry_t *next = active->entries.cqe_next;
+        if (next == &termlist_head) {
+                next = termlist_head.cqh_first;
+        }
         if (!next->term_ctx) {
-                /* the root element of the circular list is unused */
-                /* jump to the next */
-                next = next->entries.cqe_next;
+                /* strange! */
+                return NULL;
         }
         active->is_active = false;
         next->is_active = true;
@@ -1164,10 +1166,12 @@ termlist_entry_t *terminal_manager_next(termlist_entry_t *active)
 termlist_entry_t *terminal_manager_prev(termlist_entry_t *active)
 {
         termlist_entry_t *prev = active->entries.cqe_prev;
+        if (prev == &termlist_head) {
+                prev = termlist_head.cqh_last;
+        }
         if (!prev->term_ctx) {
-                /* the root element of the circular list is unused */
-                /* jump to the next */
-                prev = prev->entries.cqe_prev;
+                /* strange! */
+                return NULL;
         }
         active->is_active = false;
         prev->is_active = true;
@@ -1233,7 +1237,8 @@ int main(int argc, char *argv[])
                         active = terminal_manager_next(active);
                         /* remove window, panel and kill pid */
                         terminal_manager_terminate(active_old);
-                        if (active_old == active) {
+                        if (active_old == active)
+                        {
                                 /* we are finished */
                                 break;
                         }
